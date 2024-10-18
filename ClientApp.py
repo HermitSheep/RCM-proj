@@ -9,8 +9,12 @@ queue_max_size = 7 #meters
 rssi_max_size = 10 #rssi samples
 
 
-
 def get_station_info_direct():
+    '''
+    Runs the iw command and stores the output. It retrieves the client's information (MAC address, RSSI and distance).
+    :params: nothing
+    :returns: nothing
+    '''
     # Command to run via SSH and capture the output directly
     command = (
         "ssh -i /home/mateus/.ssh/mikrotik_rsa "
@@ -70,15 +74,23 @@ class RSSIBuffer:
         self.size = rssi_max_size
         
     def add_rssi(self, rssi_value):
-        """Adds a new RSSI value to the buffer.
-        Fills the buffer with the initial RSSI value to prevent early median from being 0."""
+        """
+        Adds a new RSSI value to the buffer.
+        Fills the buffer with the initial RSSI value to prevent early median from being 0.
+        :param data: Self and the RSSI
+        :return: nothing
+        """
         if len(self.buffer) == 0:
             for _ in range(len(self.buffer)):
                 self.add_rssi(rssi_value)
         self.buffer.append(rssi_value)
     
     def calculate_median(self):
-        """Calculates the median of the RSSI values in the buffer."""
+        """
+        Calculates the median of the RSSI values in the buffer.
+        :param data: self
+        :return: The median of the buffer (median of the RSSI) or None if the buffer is empty
+        """
         if len(self.buffer) > 0:
             return statistics.median(self.buffer)
         else:
@@ -149,18 +161,27 @@ class TrackClients:
         self.start_time = time.time()
 
     def track_clients(self, mac_address):
-        """Find an existing client or create a new one if not found."""
+        """
+        Find an existing client or create a new one if not found.
+        :param data: self and MAC address of the client
+        :return: If the MAC address exits, returns the corresponding client. Otherwise, returns a new client
+        """
         for client in self.clients:
             if client.mac_address == mac_address:
                 return client
+            
         new_client = Client(mac_address)
         self.clients.append(new_client)
         return new_client
 
     def start(self):
-        """Start tracking clients' MAC addresses and RSSI using iw every second."""
+        """
+        Start tracking clients' MAC addresses and RSSI using iw every second.
+        :param data: self
+        :return: nothing
+        """
         while True:
-            client_data = self.get_client_info()
+            client_data = self.get_client_info() #array of clients
             current_time = time.time()
 
             for mac_address, rssi, distance in client_data:
@@ -179,9 +200,15 @@ class TrackClients:
             time.sleep(1)
 
     def get_client_info(self):
-        """Use iw command to get a list of clients with MAC addresses, RSSI, and distance."""
-        result = subprocess.run(['iw', 'dev', 'wlan0', 'station', 'dump'], stdout=subprocess.PIPE)
-        output = result.stdout.decode('utf-8')
+        """
+        After retrieving all the clients, it organizes each client into an array.
+        :param data: self
+        :return: the client's information
+        """
+        #result = subprocess.run(['iw', 'dev', 'wlan0', 'station', 'dump'], stdout=subprocess.PIPE)
+        #wlan0 AP's interface
+        #output = result.stdout.decode('utf-8')
+        result = get_station_info_direct()
 
         client_info = []
         current_mac = None
@@ -189,12 +216,16 @@ class TrackClients:
         current_distance = None
 
         for line in output.split('\n'):
+
             if 'Station' in line:
                 current_mac = line.split()[1]
+
             elif 'signal' in line:
                 current_signal = int(line.split()[1])  # signal strength (RSSI)
+
             elif 'distance' in line:  # This assumes there's a way to get the distance, which might be computed differently
                 current_distance = float(line.split()[1])  # Replace this with how you get distance
+                
             if current_mac and current_signal is not None:
                 client_info.append((current_mac, current_signal, current_distance))
                 current_mac, current_signal, current_distance = None, None, None
