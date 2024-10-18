@@ -257,4 +257,22 @@ class AccessPoint:
 
         return avg_wait_time, avg_service_time
         
+#classe AP tem:
+# 2 listas de clientes - atual e pessoas que ja foram atendidas
+# inteiro para o tempo medio de espera
+# inteiro para o tempo medio de serviço
+# inteiro para o tempo atual (tudo de tempo em segundos)
+# funçao que atualiza a lista de clientes - chama o get_station_info_direct() e compara as chaves com os MACs da sua propria lista
+# se houver clientes novos adiciona e se houver clientes que ja nao existe na tabela e apaga esses os clientes da lista
+# outra funçao para atualizar todos os clientes que estao na lista - chama update()
+# outra funcao que o atualiza a si propria e volta a calcular os tempos
+# ultima funcao que devolve esses tempos
+# clientes tem uma funçao que da os seus tempos
 
+def main():
+    i = 1
+    return i    
+
+if __name__ == '__main__':
+    while (True):
+        main()
