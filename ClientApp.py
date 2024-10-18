@@ -5,9 +5,13 @@ from collections import deque
 import statistics
 import pandas as pd
 
-queue_max_size = 7 #meters
-rssi_max_size = 10 #rssi samples
+QUEUE_MAX_SIZE = 7 #meters
+RSSI_MAX_SIZE = 10 #rssi samples
+SERVICE_DIST = 1 #distance at which the person is being served at the balcony
+LEAVING_DIST = 3 #distance at whereafter the person is probably leaving
 
+def get_time():
+    return int(time.time())
 
 def get_station_info_direct():
     '''
@@ -41,12 +45,12 @@ def get_station_info_direct():
     
     for match in matches:
         mac_address = match[0]
-        signal_strength = int(match[1])
-        stations[mac_address] = signal_strength
+        signalStrength = int(match[1])
+        stations[mac_address] = signalStrength
 
     return stations
 
-def rssi_dist(signal):
+def rssi_to_dist(signal):
     """
     Gives the median of the distances for the given RSSI value.
     :param data: signal strength (RSSI)
@@ -54,26 +58,26 @@ def rssi_dist(signal):
     """
     data = pd.read_excel('Fila_Medições.xlsx', index_col=0)
 
-    df_selected = data[['Distancia', 'RSSI']]
-    rssi_dist = {}
+    dfSelected = data[['Distancia', 'RSSI']]
+    rssiDist = {}
     key = signal
-    rssi_dist.setdefault(key, [])
-    for _, row in df_selected.iterrows():
+    rssiDist.setdefault(key, [])
+    for _, row in dfSelected.iterrows():
         rssi = row['RSSI']
         distance = row['Distancia']
         if (rssi == signal):
-            rssi_dist[key].append(distance)
+            rssiDist[key].append(distance)
     
-    median_dist = statistics.mean(rssi_dist[key])
+    medianDist = statistics.mean(rssiDist[key])
     
-    return median_dist
+    return medianDist
 
 class RSSIBuffer:
     def __init__(self):
-        self.buffer = deque(maxlen=rssi_max_size)
-        self.size = rssi_max_size
+        self.buffer = deque(maxlen=RSSI_MAX_SIZE)
+        self.size = RSSI_MAX_SIZE
         
-    def add_rssi(self, rssi_value):
+    def add_rssi(self, rssiValue):
         """
         Adds a new RSSI value to the buffer.
         Fills the buffer with the initial RSSI value to prevent early median from being 0.
@@ -82,8 +86,8 @@ class RSSIBuffer:
         """
         if len(self.buffer) == 0:
             for _ in range(len(self.buffer)):
-                self.add_rssi(rssi_value)
-        self.buffer.append(rssi_value)
+                self.add_rssi(rssiValue)
+        self.buffer.append(rssiValue)
     
     def calculate_median(self):
         """
@@ -94,66 +98,77 @@ class RSSIBuffer:
         if len(self.buffer) > 0:
             return statistics.median(self.buffer)
         else:
-            print('Tried to calculate median of empty buffer')
-            return None
+            raise ValueError("Tried to read from an empty buffer")
         
 # Define the Client class
 class Client:
-    def __init__(self, mac_address):
-        self.mac_address = mac_address
+    def __init__(self, macAddress):
+        self.macAddress = macAddress
         self.distance = 0
-        self.past_distance = 0
         self.rssi_buffer = RSSIBuffer()
-        self.waiting_time = 0
-        self.service_time = 0
-        self.leaving_time = 0 #Measuring the leave time so we can better detect when someone is leaving
-        self.expected_wait_time = 0
+        self.waitingTime = 0
+        self.serviceTime = 0
+        self.leavingTime = 0 #Measuring the leave time so we can better detect when someone is leaving
+        self.expectedWaitTime = 0
         self.state = 'waiting'  # States: 'waiting', 'service', 'leaving', 'left'
+        self.pastTime = get_time()
         
-    def update_client(self, rssi, time):
-        """Update the client's values."""
-        #update distance and past distance
+    def update_rssi(self, rssi):
         self.rssi_buffer.add_rssi(rssi)
-        self.distance = rssi_dist(self.rssi_buffer.calculate_median())
-        #TODO I'm not sure this even works...
-        if self.waiting_time%5 == 4 and self.distance > queue_max_size:
-            self.past_distance = self.distance
-        #update the state or times
+        self.distance = rssi_to_dist(rssi)
+        
+    def update_state(self, timePassed):
+        """
+        Updates the client's state and times
+        :param data: self and the current time
+        :return: nothing
+        :raises: ValueError if the client has an invalid state
+        """
         match self.state:
             case 'waiting':
-                if self.distance < 1:
+                if self.distance < SERVICE_DIST:
                     self.state = 'service'
                 else:
-                    self.waiting_time += time
+                    self.waitingTime += timePassed
             case 'service':
-                if self.distance < 1:
+                if self.distance > LEAVING_DIST:
                     self.state = 'leaving'
                 else:
-                    self.service_time += time
+                    self.serviceTime += timePassed
             case 'leaving':
-                if rssi == -100:
-                    self.state = 'left'
-                else:
-                    self.leaving_time += time
-
-    def update_expected_wait_time(self, expected_time):
-        self.expected_wait_time = expected_time
-
-    def get_waiting_time(self):
-        return self.waiting_time
-
-    def get_service_time(self):
-        return self.service_time
-
-    def get_leaving_time(self):
-        return self.leaving_time
-
-    def get_distance(self):
-        return self.distance
+                self.leavingTime += timePassed
+            case _:
+                raise ValueError("Client: ", self.macAddress, " has an impossible state")
+    
+    def update(self, rssi, currentTime):
+        """
+        Updates the client's rssi, distance, state and times
+        :param data: self, client's rssi and the current time
+        :return: nothing
+        """
+        timePassed = currentTime - self.pastTime
+        self.update_rssi(rssi)
+        self.update_state(timePassed)
+        
+    def get_times(self):
+        """
+        Gets the client's 
+        :param data: self
+        :return: the time the client has spent
+        """
+        match self.state:
+            case 'waiting':
+                return (self.state, self.waitingTime)
+            case 'service':
+                return (self.state, self.serviceTime)
+            case 'leaving':
+                return (self.state, self.leavingTime)
+            case _:
+                raise ValueError("Client: ", self.macAddress, " has an impossible state")
 
 
 # Define the TrackClients class
-class TrackClients:
+class AccessPoint:
     def __init__(self):
         self.clients = []
         self.wait_times = []
@@ -212,7 +227,7 @@ class TrackClients:
 
         client_info = []
         current_mac = None
-        current_signal = None
+        current_stignal = None
         current_distance = None
 
         for line in output.split('\n'):
