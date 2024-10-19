@@ -6,19 +6,25 @@ import statistics
 import pandas as pd
 
 QUEUE_MAX_SIZE = 7 #meters
-RSSI_MAX_SIZE = 10 #rssi samples
-SERVICE_DIST = 1 #distance at which the person is being served at the balcony
-LEAVING_DIST = 3 #distance at whereafter the person is probably leaving
+RSSI_BUF_MAX_SIZE = 10 #rssi samples
+SERVICE_DIST = 1 #distance at which the person is being served at the balcony, in meters
+LEAVING_DIST = 3 #distance at whereafter the person is probably leaving, in meters
+DIST_TO_PEOPLE_RATIO = 0.6 #average distance between two people in the queue, in meters
 
 def get_time():
+    """
+    Get's the current time as an int
+    :params: nothing
+    :returns: current time (int)
+    """
     return int(time.time())
 
 def get_station_info_direct():
-    '''
-    Runs the iw command and stores the output. It retrieves the client's information (MAC address, RSSI and distance).
+    """
+    Runs the iw command to retrieve the clients' MAC address and RSSI, and stores them in a dictionary.
     :params: nothing
     :returns: dictionary with the MAC address as key and the corresponding RSSI as the value
-    '''
+    """
     # Command to run via SSH and capture the output directly
     command = (
         "ssh -i /home/mateus/.ssh/mikrotik_rsa "
@@ -52,9 +58,9 @@ def get_station_info_direct():
 
 def rssi_to_dist(signal):
     """
-    Gives the median of the distances for the given RSSI value.
+    Gives the average the distance for the given RSSI value.
     :param data: signal strength (RSSI)
-    :return: The median of the distances for the given value of RSSI
+    :return: The average of the distances for the given value of RSSI
     """
     data = pd.read_excel('Fila_Medições.xlsx', index_col=0)
 
@@ -74,71 +80,78 @@ def rssi_to_dist(signal):
 
 class RSSIBuffer:
     def __init__(self):
-        self.buffer = deque(maxlen=RSSI_MAX_SIZE)
-        self.size = RSSI_MAX_SIZE
+        self.__buffer = deque(maxlen=RSSI_BUF_MAX_SIZE)
+        self.__size = RSSI_BUF_MAX_SIZE
         
-    def add_rssi(self, rssiValue):
+    def add_rssi(self, rssi):
         """
         Adds a new RSSI value to the buffer.
-        Fills the buffer with the initial RSSI value to prevent early median from being 0.
-        :param data: Self and the RSSI
+        If the buffer is empty, fills it with the initial RSSI value to prevent early median from being 0.
+        :param data: RSSI
         :return: nothing
         """
-        if len(self.buffer) == 0:
-            for _ in range(len(self.buffer)):
-                self.add_rssi(rssiValue)
-        self.buffer.append(rssiValue)
+        if len(self.__buffer) == 0:
+            for _ in range(self.__size):
+                self.add_rssi(rssi)
+        else:
+            self.__buffer.append(rssi)
     
     def calculate_median(self):
         """
         Calculates the median of the RSSI values in the buffer.
         :param data: self
-        :return: The median of the buffer (median of the RSSI) or None if the buffer is empty
+        :return: The median of the RSSI values in the buffer
+        :raises: ValueError if the buffer is empty
         """
-        if len(self.buffer) > 0:
-            return statistics.median(self.buffer)
+        if len(self.__buffer) > 0:
+            return statistics.median(self.__buffer)
         else:
             raise ValueError("Tried to read from an empty buffer")
         
 # Define the Client class
 class Client:
     def __init__(self, macAddress):
-        self.macAddress = macAddress
-        self.distance = 0
-        self.rssi_buffer = RSSIBuffer()
-        self.waitingTime = 0
-        self.serviceTime = 0
-        self.leavingTime = 0 #Measuring the leave time so we can better detect when someone is leaving
-        self.expectedWaitTime = 0
-        self.state = 'waiting'  # States: 'waiting', 'service', 'leaving', 'left'
-        self.pastTime = get_time()
+        self.__macAddress = macAddress
+        self.__distance = 0
+        self.__rssiBuffer = RSSIBuffer()
+        self.__waitingTime = 0
+        self.__serviceTime = 0
+        self.__leavingTime = 0 #Measuring the leave time so we can better detect when someone is leaving
+        self.__expectedWaitTime = 0
+        self.__state = 'waiting'  # States: 'waiting', 'service', 'leaving'
+        self.__pastTime = get_time()
         
-    def update_rssi(self, rssi):
-        self.rssi_buffer.add_rssi(rssi)
-        self.distance = rssi_to_dist(rssi)
+    def __update_rssi(self, rssi):
+        """
+        Updates the client's rssi and distance
+        :param data: self and the current rssi
+        :return: nothing
+        """
+        self.__rssiBuffer.add_rssi(rssi)
+        self.__distance = rssi_to_dist(self.__rssiBuffer.calculate_median())
         
-    def update_state(self, timePassed):
+    def __update_state(self, timePassed):
         """
         Updates the client's state and times
         :param data: self and the current time
         :return: nothing
         :raises: ValueError if the client has an invalid state
         """
-        match self.state:
+        match self.__state:
             case 'waiting':
-                if self.distance < SERVICE_DIST:
-                    self.state = 'service'
+                if self.__distance < SERVICE_DIST:
+                    self.__state = 'service'
                 else:
-                    self.waitingTime += timePassed
+                    self.__waitingTime += timePassed
             case 'service':
-                if self.distance > LEAVING_DIST:
-                    self.state = 'leaving'
+                if self.__distance > LEAVING_DIST:
+                    self.__state = 'leaving'
                 else:
-                    self.serviceTime += timePassed
+                    self.__serviceTime += timePassed
             case 'leaving':
-                self.leavingTime += timePassed
+                self.__leavingTime += timePassed
             case _:
-                raise ValueError("Client: ", self.macAddress, " has an impossible state")
+                raise ValueError("Client: ", self.__macAddress, " has an impossible state")
     
     def update(self, rssi, currentTime):
         """
@@ -146,34 +159,68 @@ class Client:
         :param data: self, client's rssi and the current time
         :return: nothing
         """
-        timePassed = currentTime - self.pastTime
-        self.update_rssi(rssi)
-        self.update_state(timePassed)
+        timePassed = currentTime - self.__pastTime
+        self.__update_rssi(rssi)
+        self.__update_state(timePassed)
+        
+    def get_time(self):
+        """
+        Gets the client's state and corresponding time
+        :param data: self
+        :return: the current state and the corresponding time
+        :raises: ValueError if the client has an invalid state
+        """
+        match self.__state:
+            case 'waiting':
+                return (self.__state, self.__waitingTime)
+            case 'service':
+                return (self.__state, self.__serviceTime)
+            case 'leaving':
+                return (self.__state, self.__leavingTime)
+            case _:
+                raise ValueError("Client: ", self.__macAddress, " has an impossible state")
         
     def get_times(self):
         """
-        Gets the client's time
+        Gets the client's waiting, service and expected wait time, in that order
         :param data: self
-        :return: the time the client has spent
+        :return: client's waiting, service and expected wait time, in that order
         """
-        match self.state:
-            case 'waiting':
-                return (self.state, self.waitingTime)
-            case 'service':
-                return (self.state, self.serviceTime)
-            case 'leaving':
-                return (self.state, self.leavingTime)
-            case _:
-                raise ValueError("Client: ", self.macAddress, " has an impossible state")
+        return (self.__waitingTime, self.__serviceTime, self.__expectedWaitTime)
+            
+    def get_mac(self):
+        """
+        Gets the client's MAC address
+        :param data: self
+        :return: client's MAC address
+        """
+        return self.__macAddress
+    
+    def get_distance(self):
+        """
+        Gets the client's distance to the AP
+        :param data: self
+        :return: client's distance to the AP
+        """
+        return self.__distance
+    
+    def set_expected_time(self, expected_time):
+        """
+        Set's the client's expected waiting time
+        :param data: self
+        :return: nothing
+        """
+        self.__expectedWaitTime = expected_time
 
 
 # Define the TrackClients class
 class APoint:
     def __init__(self):
-        self.clients = []
-        self.wait_times = []
-        self.service_times = []
-        self.start_time = time.time()
+        self.__clients = []
+        self.__old_clients = []
+        self.__avg_wait_time = 0
+        self.__avg_service_time = 0
+        self.__current_time = time.time()
 
     def track_clients(self, mac_address):
         """
@@ -181,12 +228,12 @@ class APoint:
         :param data: self and MAC address of the client
         :return: If the MAC address exits, returns the corresponding client. Otherwise, returns a new client
         """
-        for client in self.clients:
+        for client in self.__clients:
             if client.mac_address == mac_address:
                 return client
             
         new_client = Client(mac_address)
-        self.clients.append(new_client)
+        self.__clients.append(new_client)
         return new_client
 
     def start(self):
@@ -203,14 +250,14 @@ class APoint:
                 client = self.track_clients(mac_address)
 
                 # Update RSSI buffer and distances
-                client.rssi_buffer.add_rssi(rssi)
+                client.__rssiBuffer.add_rssi(rssi)
                 client.update_distance(distance)
 
                 # Check client state and update wait times
                 client.check_state()
 
-                if client.state == 'waiting':
-                    client.update_waited_time(current_time - self.start_time)
+                if client.__state == 'waiting':
+                    client.update_waited_time(current_time - self.__current_time)
 
             time.sleep(1)
 
@@ -225,15 +272,15 @@ class APoint:
         #output = result.stdout.decode('utf-8')
         result = get_station_info_direct()
 
-        client_info = []
-        current_mac = None
-        current_stignal = None
+        clientInfo = []
+        currentMac = None
+        currentSignal = None
         current_distance = None
 
         for line in output.split('\n'):
 
             if 'Station' in line:
-                current_mac = line.split()[1]
+                currentMac = line.split()[1]
 
             elif 'signal' in line:
                 current_signal = int(line.split()[1])  # signal strength (RSSI)
@@ -241,33 +288,67 @@ class APoint:
             elif 'distance' in line:  # This assumes there's a way to get the distance, which might be computed differently
                 current_distance = float(line.split()[1])  # Replace this with how you get distance
                 
-            if current_mac and current_signal is not None:
-                client_info.append((current_mac, current_signal, current_distance))
-                current_mac, current_signal, current_distance = None, None, None
+            if currentMac and current_signal is not None:
+                clientInfo.append((currentMac, current_signal, current_distance))
+                currentMac, current_signal, current_distance = None, None, None
 
-        return client_info
+        return clientInfo
 
     def average_time(self):
         """Calculate average wait and service times for all clients."""
-        waiting_times = [client.waited_time for client in self.clients if client.state == 'waiting']
-        service_times = [client.waited_time for client in self.clients if client.state == 'service']
+        waiting_times = [client.waited_time for client in self.__clients if client.state == 'waiting']
+        service_times = [client.waited_time for client in self.__clients if client.state == 'service']
         
         avg_wait_time = sum(waiting_times) / len(waiting_times) if waiting_times else 0
         avg_service_time = sum(service_times) / len(service_times) if service_times else 0
 
         return avg_wait_time, avg_service_time
         
+    def find_client_by_mac(self, mac_address):
+        """
+        Finds the client in the list of clients that has a given MAC address
+        :param data: self
+        :return: the client's information
+        """
+        for client in self.__clients:
+            if client.get_mac() == mac_address:
+                return client
+        return None  # Return None if not found
+    
+    def get_times(self):
+        """
+        Returns the average waiting and service times
+        :param data: self
+        :return: the client's information
+        """
+        return (self.__avg_wait_time, self.__avg_service_time)
+    
+    def get_client_times(self, mac):
+        """
+        Returns the waiting, service and expected waiting times of the client that has a given MAC address
+        :param data: self, mac address
+        :return: the client's waiting, service and expected waiting times, in that order
+        """
+        client = self.find_client_by_mac(mac)
+        if client == None:
+            return None
+        else:
+            return client.get_times()
+        
 #classe AP tem:
 # 2 listas de clientes - atual e pessoas que ja foram atendidas
 # inteiro para o tempo medio de espera
 # inteiro para o tempo medio de serviço
 # inteiro para o tempo atual (tudo de tempo em segundos)
-# funçao que atualiza a lista de clientes - chama o get_station_info_direct() e compara as chaves com os MACs da sua propria lista
+
+# - funçao que atualiza a lista de clientes - chama o get_station_info_direct() e compara as chaves com os MACs da sua propria lista
 # se houver clientes novos adiciona e se houver clientes que ja nao existe na tabela e apaga esses os clientes da lista
-# outra funçao para atualizar todos os clientes que estao na lista - chama update()
-# outra funcao que o atualiza a si propria e volta a calcular os tempos
-# ultima funcao que devolve esses tempos
-# clientes tem uma funçao que da os seus tempos
+# - outra funçao para atualizar todos os clientes que estao na lista - chama update()
+# - outra funcao que atualiza os tempos medios (clientes tem uma funçao que da os seus tempos)
+# - outra funcao que atualiza os tempos de espera esperados dos clientes, multiplicando o tempo de serviço médio pelo numero de pessoas que estão à sua frente
+# - outra funcao que se atualiza a si propria: corre as ultimas funcoes
+# X outra funcao que devolve tempos medios esperados
+# X outra funcao que devolve os tempos do cliente com o mac especifico
 
 
 
