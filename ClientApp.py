@@ -17,7 +17,7 @@ def get_station_info_direct():
     '''
     Runs the iw command and stores the output. It retrieves the client's information (MAC address, RSSI and distance).
     :params: nothing
-    :returns: nothing
+    :returns: dictionary with the MAC address as key and the corresponding RSSI as the value
     '''
     # Command to run via SSH and capture the output directly
     command = (
@@ -168,7 +168,7 @@ class Client:
 
 
 # Define the TrackClients class
-class AccessPoint:
+class APoint:
     def __init__(self):
         self.clients = []
         self.wait_times = []
@@ -268,6 +268,52 @@ class AccessPoint:
 # outra funcao que o atualiza a si propria e volta a calcular os tempos
 # ultima funcao que devolve esses tempos
 # clientes tem uma funçao que da os seus tempos
+
+
+
+class AccessPoint:
+    def __init__(self, client):
+        self.client_list = Client()
+        self.client_left = Client()
+        self.waitingTime = 0
+        self.serviceTime = 0
+        self.currentTime = 0 #this is the time that it takes for the last person to be served
+
+    def update_client_list(self):
+
+        stations = get_station_info_direct() #dictionary
+        tmp = Client()
+
+        for client in self.client_list: #se houver clientes que ja nao existe na tabela e apaga esses os clientes da lista
+            if client.macAddress not in stations:
+                self.client_left.append(client)
+                self.client_list.remove(client)
+            tmp.append(client.macAddress)
+
+        
+        for key in stations.keys(): #se houver clientes novos adiciona
+            if key not in tmp:
+                client = Client(key)
+                client.update_rssi(client, stations[key])
+                self.client_list.append(client)
+
+
+    def update_client(self, serviceTime):
+        
+        stations = get_station_info_direct() #dictionary
+
+        for client in self.client_list:
+            if client.macAddress in stations:
+                rssi = stations[client.macAddres]
+                self.serviceTime = client.serviceTime
+                self.currentTime = len(self.client_list) * self.serviceTime
+                client.update(client, rssi, self.currentTime)
+
+                
+            
+
+
+
 
 def main():
     i = 1
