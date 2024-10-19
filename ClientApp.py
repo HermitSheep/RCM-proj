@@ -182,11 +182,11 @@ class Client:
         
     def get_times(self):
         """
-        Gets the client's waiting, service and expected wait time, in that order
+        Gets the client's waiting, service, leaving and expected wait time, in that order
         :param data: self
-        :return: client's waiting, service and expected wait time, in that order
+        :return: client's waiting, service, leaving and expected wait time, in that order
         """
-        return (self.__waitingTime, self.__serviceTime, self.__expectedWaitTime)
+        return (self.__waitingTime, self.__serviceTime, self.__leavingTime, self.__expectedWaitTime)
             
     def get_mac(self):
         """
@@ -303,31 +303,43 @@ class APoint:
         avg_service_time = sum(service_times) / len(service_times) if service_times else 0
 
         return avg_wait_time, avg_service_time
+    
+    
+    def update_clients_expected_time(self):
+        """
+        Updates all clients' expected waiting times
+        :param data: self
+        :return: nothing
+        """
+        for client in self.__clients:
+            dist = client.get_distance()
+            expected_time = round(dist / DIST_TO_PEOPLE_RATIO) * self.__avg_service_time
+            client.set_expected_time(expected_time)
         
     def find_client_by_mac(self, mac_address):
         """
         Finds the client in the list of clients that has a given MAC address
         :param data: self
-        :return: the client's information
+        :return: the client, or nothing if the client doesn't exist
         """
         for client in self.__clients:
             if client.get_mac() == mac_address:
                 return client
-        return None  # Return None if not found
+        return None
     
     def get_times(self):
         """
-        Returns the average waiting and service times
+        Returns the average waiting and service times, in that order
         :param data: self
-        :return: the client's information
+        :return: average waiting and service times, in that order
         """
         return (self.__avg_wait_time, self.__avg_service_time)
     
     def get_client_times(self, mac):
         """
-        Returns the waiting, service and expected waiting times of the client that has a given MAC address
+        Returns the waiting, service, leaving and expected waiting times of the client that has a given MAC address
         :param data: self, mac address
-        :return: the client's waiting, service and expected waiting times, in that order
+        :return: the client's waiting, service, leaving and expected waiting times, in that order
         """
         client = self.find_client_by_mac(mac)
         if client == None:
@@ -345,10 +357,10 @@ class APoint:
 # se houver clientes novos adiciona e se houver clientes que ja nao existe na tabela e apaga esses os clientes da lista
 # - outra funçao para atualizar todos os clientes que estao na lista - chama update()
 # - outra funcao que atualiza os tempos medios (clientes tem uma funçao que da os seus tempos)
-# - outra funcao que atualiza os tempos de espera esperados dos clientes, multiplicando o tempo de serviço médio pelo numero de pessoas que estão à sua frente
+# X outra funcao que atualiza os tempos de espera esperados dos clientes, multiplicando o tempo de serviço médio pelo numero de pessoas que estão à sua frente
 # - outra funcao que se atualiza a si propria: corre as ultimas funcoes
 # X outra funcao que devolve tempos medios esperados
-# X outra funcao que devolve os tempos do cliente com o mac especifico
+# X outra funcao que devolve todos os tempos do cliente com o mac especifico
 
 
 
