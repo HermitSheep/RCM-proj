@@ -14,11 +14,11 @@ def get_time():
     return int(time.time())
 
 def get_station_info_direct():
-    '''
+    """
     Runs the iw command and stores the output. It retrieves the client's information (MAC address, RSSI and distance).
     :params: nothing
     :returns: nothing
-    '''
+    """
     # Command to run via SSH and capture the output directly
     command = (
         "ssh -i /home/mateus/.ssh/mikrotik_rsa "
@@ -51,33 +51,34 @@ def get_station_info_direct():
     return stations
 
 def rssi_to_dist(signal):
-    """
-    Gives the median of the distances for the given RSSI value.
-    :param data: signal strength (RSSI)
-    :return: The median of the distances for the given value of RSSI
-    """
-    data = pd.read_excel('Fila_Medições.xlsx', index_col=0)
-
-    dfSelected = data[['Distancia', 'RSSI']]
-    rssiDist = {}
-    key = signal
-    rssiDist.setdefault(key, [])
-    for _, row in dfSelected.iterrows():
-        rssi = row['RSSI']
-        distance = row['Distancia']
-        if (rssi == signal):
-            rssiDist[key].append(distance)
-    
-    medianDist = statistics.mean(rssiDist[key])
-    
-    return medianDist
+#    """
+#    Gives the median of the distances for the given RSSI value.
+#    :param data: signal strength (RSSI)
+#    :return: The median of the distances for the given value of RSSI
+#    """
+#    data = pd.read_excel('wifi_data.csv', index_col=0)
+#
+#    df_selected = data[['Distancia', 'RSSI']]
+#    rssi_dist = {}
+#    key = signal
+#    rssi_dist.setdefault(key, [])
+#    for _, row in df_selected.iterrows():
+#        rssi = row['RSSI']
+#        distance = row['Distancia']
+#        if (rssi == signal):
+#            rssi_dist[key].append(distance)
+#    
+#    median_dist = statistics.mean(rssi_dist[key])
+#    
+#    return median_dist
+    return 6
 
 class RSSIBuffer:
     def __init__(self):
         self.buffer = deque(maxlen=RSSI_MAX_SIZE)
         self.size = RSSI_MAX_SIZE
         
-    def add_rssi(self, rssiValue):
+    def add_rssi(self, rssi_value):
         """
         Adds a new RSSI value to the buffer.
         Fills the buffer with the initial RSSI value to prevent early median from being 0.
@@ -86,10 +87,10 @@ class RSSIBuffer:
         """
         if len(self.buffer) == 0:
             for _ in range(len(self.buffer)):
-                self.add_rssi(rssiValue)
-        self.buffer.append(rssiValue)
+                self.add_rssi(rssi_value)
+        self.buffer.append(rssi_value)
     
-    def calculate_median(self):
+    def get_true_rssi(self):
         """
         Calculates the median of the RSSI values in the buffer.
         :param data: self
@@ -103,160 +104,174 @@ class RSSIBuffer:
 # Define the Client class
 class Client:
     def __init__(self, macAddress):
-        self.macAddress = macAddress
-        self.distance = 0
-        self.rssi_buffer = RSSIBuffer()
-        self.waitingTime = 0
-        self.serviceTime = 0
-        self.leavingTime = 0 #Measuring the leave time so we can better detect when someone is leaving
-        self.expectedWaitTime = 0
-        self.state = 'waiting'  # States: 'waiting', 'service', 'leaving', 'left'
-        self.pastTime = get_time()
+        self.__mac_address = macAddress
+        self.__distance = 0
+        self.__rssi_buffer = RSSIBuffer()
+        self.__waiting_time = 0
+        self.__service_time = 0
+        self.__leaving_time = 0 #Measuring the leave time so we can better detect when someone is leaving
+        self.__expected_wait_time = 0
+        self.__state = 'waiting'  # States: 'waiting', 'service', 'leaving', 'left'
+        self.__past_time = get_time()
         
-    def update_rssi(self, rssi):
-        self.rssi_buffer.add_rssi(rssi)
-        self.distance = rssi_to_dist(rssi)
+    def __update_rssi(self, rssi):
+        """
+        Updates the client's rssi and distance
+        :param data: self and the client's current rssi
+        :return: nothing
+        """
+        self.__rssi_buffer.add_rssi(rssi)
+        self.__distance = rssi_to_dist(self.__rssi_buffer.get_true_rssi())
         
-    def update_state(self, timePassed):
+    def __update_state(self, time_passed):
         """
         Updates the client's state and times
         :param data: self and the current time
         :return: nothing
         :raises: ValueError if the client has an invalid state
         """
-        match self.state:
+        match self.__state:
             case 'waiting':
-                if self.distance < SERVICE_DIST:
-                    self.state = 'service'
+                if self.__distance < SERVICE_DIST:
+                    self.__state = 'service'
                 else:
-                    self.waitingTime += timePassed
+                    self.__waiting_time += time_passed
             case 'service':
-                if self.distance > LEAVING_DIST:
-                    self.state = 'leaving'
+                if self.__distance > LEAVING_DIST:
+                    self.__state = 'leaving'
                 else:
-                    self.serviceTime += timePassed
+                    self.__service_time += time_passed
             case 'leaving':
-                self.leavingTime += timePassed
+                self.__leaving_time += time_passed
             case _:
-                raise ValueError("Client: ", self.macAddress, " has an impossible state")
+                raise ValueError("Client: ", self.__mac_address, " has an impossible state")
     
-    def update(self, rssi, currentTime):
+    def update(self, rssi, current_time):
         """
         Updates the client's rssi, distance, state and times
-        :param data: self, client's rssi and the current time
+        :param data: self, and the client's current rssi and time
         :return: nothing
         """
-        timePassed = currentTime - self.pastTime
-        self.update_rssi(rssi)
-        self.update_state(timePassed)
+        time_passed = current_time - self.__past_time
+        self.__update_rssi(rssi)
+        self.__update_state(time_passed)
         
     def get_times(self):
         """
-        Gets the client's 
+        Gets the client's times
         :param data: self
         :return: the time the client has spent
         """
-        match self.state:
+        match self.__state:
             case 'waiting':
-                return (self.state, self.waitingTime)
+                return (self.__state, self.__waiting_time)
             case 'service':
-                return (self.state, self.serviceTime)
+                return (self.__state, self.__service_time)
             case 'leaving':
-                return (self.state, self.leavingTime)
+                return (self.__state, self.__leaving_time)
             case _:
-                raise ValueError("Client: ", self.macAddress, " has an impossible state")
+                raise ValueError("Client: ", self.__mac_address, " has an impossible state")
+            
+    def get_mac(self):
+        return self.__mac_address
+    
+    def get_distance(self):
+        return self.__distance
+    
+    def set_expected_time(self, time):
+        self.__expected_wait_time = time
 
 
 # Define the TrackClients class
-class AccessPoint:
-    def __init__(self):
-        self.clients = []
-        self.wait_times = []
-        self.service_times = []
-        self.start_time = time.time()
-
-    def track_clients(self, mac_address):
-        """
-        Find an existing client or create a new one if not found.
-        :param data: self and MAC address of the client
-        :return: If the MAC address exits, returns the corresponding client. Otherwise, returns a new client
-        """
-        for client in self.clients:
-            if client.mac_address == mac_address:
-                return client
-            
-        new_client = Client(mac_address)
-        self.clients.append(new_client)
-        return new_client
-
-    def start(self):
-        """
-        Start tracking clients' MAC addresses and RSSI using iw every second.
-        :param data: self
-        :return: nothing
-        """
-        while True:
-            client_data = self.get_client_info() #array of clients
-            current_time = time.time()
-
-            for mac_address, rssi, distance in client_data:
-                client = self.track_clients(mac_address)
-
-                # Update RSSI buffer and distances
-                client.rssi_buffer.add_rssi(rssi)
-                client.update_distance(distance)
-
-                # Check client state and update wait times
-                client.check_state()
-
-                if client.state == 'waiting':
-                    client.update_waited_time(current_time - self.start_time)
-
-            time.sleep(1)
-
-    def get_client_info(self):
-        """
-        After retrieving all the clients, it organizes each client into an array.
-        :param data: self
-        :return: the client's information
-        """
-        #result = subprocess.run(['iw', 'dev', 'wlan0', 'station', 'dump'], stdout=subprocess.PIPE)
-        #wlan0 AP's interface
-        #output = result.stdout.decode('utf-8')
-        result = get_station_info_direct()
-
-        client_info = []
-        current_mac = None
-        current_stignal = None
-        current_distance = None
-
-        for line in output.split('\n'):
-
-            if 'Station' in line:
-                current_mac = line.split()[1]
-
-            elif 'signal' in line:
-                current_signal = int(line.split()[1])  # signal strength (RSSI)
-
-            elif 'distance' in line:  # This assumes there's a way to get the distance, which might be computed differently
-                current_distance = float(line.split()[1])  # Replace this with how you get distance
-                
-            if current_mac and current_signal is not None:
-                client_info.append((current_mac, current_signal, current_distance))
-                current_mac, current_signal, current_distance = None, None, None
-
-        return client_info
-
-    def average_time(self):
-        """Calculate average wait and service times for all clients."""
-        waiting_times = [client.waited_time for client in self.clients if client.state == 'waiting']
-        service_times = [client.waited_time for client in self.clients if client.state == 'service']
-        
-        avg_wait_time = sum(waiting_times) / len(waiting_times) if waiting_times else 0
-        avg_service_time = sum(service_times) / len(service_times) if service_times else 0
-
-        return avg_wait_time, avg_service_time
-        
+#class AccessPoint:
+#    def __init__(self):
+#        self.clients = []
+#        self.wait_times = []
+#        self.service_times = []
+#        self.start_time = time.time()
+#
+#    def track_clients(self, mac_address):
+#        """
+#        Find an existing client or create a new one if not found.
+#        :param data: self and MAC address of the client
+#        :return: If the MAC address exits, returns the corresponding client. Otherwise, returns a new client
+#        """
+#        for client in self.clients:
+#            if client.get_mac() == mac_address:
+#                return client
+#            
+#        new_client = Client(mac_address)
+#        self.clients.append(new_client)
+#        return new_client
+#
+#    def start(self):
+#        """
+#        Start tracking clients' MAC addresses and RSSI using iw every second.
+#        :param data: self
+#        :return: nothing
+#        """
+#        while True:
+#            client_data = self.get_client_info() #array of clients
+#            current_time = time.time()
+#
+#            for mac_address, rssi, distance in client_data:
+#                client = self.track_clients(mac_address)
+#
+#                # Update RSSI buffer and distances
+#                client.__rssi_buffer.add_rssi(rssi)
+#                client.update_distance(distance)
+#
+#                # Check client state and update wait times
+#                client.check_state()
+#
+#                if client.__state == 'waiting':
+#                    client.update_waited_time(current_time - self.start_time)
+#
+#            time.sleep(1)
+#
+#    def get_client_info(self):
+#        """
+#        After retrieving all the clients, it organizes each client into an array.
+#        :param data: self
+#        :return: the client's information
+#        """
+#        #result = subprocess.run(['iw', 'dev', 'wlan0', 'station', 'dump'], stdout=subprocess.PIPE)
+#        #wlan0 AP's interface
+#        #output = result.stdout.decode('utf-8')
+#        result = get_station_info_direct()
+#
+#        client_info = []
+#        current_mac = None
+#        current_stignal = None
+#        current_distance = None
+#
+#        for line in output.split('\n'):
+#
+#            if 'Station' in line:
+#                current_mac = line.split()[1]
+#
+#            elif 'signal' in line:
+#                current_signal = int(line.split()[1])  # signal strength (RSSI)
+#
+#            elif 'distance' in line:  # This assumes there's a way to get the distance, which might be computed differently
+#                current_distance = float(line.split()[1])  # Replace this with how you get distance
+#                
+#            if current_mac and current_signal is not None:
+#                client_info.append((current_mac, current_signal, current_distance))
+#                current_mac, current_signal, current_distance = None, None, None
+#
+#        return client_info
+#
+#    def average_time(self):
+#        """Calculate average wait and service times for all clients."""
+#        waiting_times = [client.waited_time for client in self.clients if client.state == 'waiting']
+#        service_times = [client.waited_time for client in self.clients if client.state == 'service']
+#        
+#        avg_wait_time = sum(waiting_times) / len(waiting_times) if waiting_times else 0
+#        avg_service_time = sum(service_times) / len(service_times) if service_times else 0
+#
+#        return avg_wait_time, avg_service_time
+#        
 #classe AP tem:
 # 2 listas de clientes - atual e pessoas que ja foram atendidas
 # inteiro para o tempo medio de espera
@@ -270,9 +285,26 @@ class AccessPoint:
 # clientes tem uma funçao que da os seus tempos
 
 def main():
-    i = 1
-    return i    
-
+    mac = 'c6:f3:7f:ec:15:2b'
+    client = Client(mac)
+    time.sleep(3)
+    cur_time = get_time()
+    rssi = -40
+    client.update(rssi, cur_time)
+    time.sleep(3)
+    cur_time = get_time()
+    rssi = -30
+    client.update(rssi, cur_time)
+    client.update(rssi, cur_time)
+    client.update(rssi, cur_time)
+    client.update(rssi, cur_time)
+    client.update(rssi, cur_time)
+    client.update(rssi, cur_time)
+    client.update(rssi, cur_time)
+    client.update(rssi, cur_time)
+    state, waiting = client.get_times()
+    print("state: ", state, ": ", waiting)
+    print("distance: ", client.get_distance())
+    
 if __name__ == '__main__':
-    while (True):
-        main()
+    main()
