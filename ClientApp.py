@@ -152,7 +152,7 @@ class Client:
         
     def get_times(self):
         """
-        Gets the client's 
+        Gets the client's time
         :param data: self
         :return: the time the client has spent
         """
@@ -279,7 +279,7 @@ class AccessPoint:
         self.serviceTime = 0
         self.currentTime = 0 #this is the time that it takes for the last person to be served
 
-    def update_client_list(self):
+    def update_client_list(self): #funçao que atualiza a lista de clientes
 
         stations = get_station_info_direct() #dictionary
         tmp = Client()
@@ -294,24 +294,33 @@ class AccessPoint:
         for key in stations.keys(): #se houver clientes novos adiciona
             if key not in tmp:
                 client = Client(key)
-                client.update_rssi(client, stations[key])
+                client.update_rssi(stations[key])
                 self.client_list.append(client)
 
 
-    def update_client(self, serviceTime):
+    def update_client(self): #funçao para atualizar todos os clientes que estao na lista 
         
         stations = get_station_info_direct() #dictionary
+        avg_time = 0
 
         for client in self.client_list:
             if client.macAddress in stations:
                 rssi = stations[client.macAddres]
-                self.serviceTime = client.serviceTime
+                self.serviceTime = client.service_time
                 self.currentTime = len(self.client_list) * self.serviceTime
-                client.update(client, rssi, self.currentTime)
-
+                client.update(rssi, self.currentTime)
+                avg_time += client.waitingTime
+        
+        self.waitingTime = avg_time + self.serviceTime
                 
+
+    def update(self): #funcao que o atualiza a si propria e volta a calcular os tempos
+        self.update_client()
+        self.update_client_list()
             
 
+    def get_times(self):
+        return self.waitingTime, self.serviceTime, self.currentTime
 
 
 
