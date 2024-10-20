@@ -13,7 +13,9 @@ SERVICE_DIST = 1 #distance at which the person is being served at the balcony, i
 LEAVING_DIST = 3 #distance at whereafter the person is probably leaving, in meters
 DIST_TO_PEOPLE_RATIO = 0.6 #average distance between two people in the queue, in meters
 AVG_NUMBER = 3 #number of past clients to take into acount when calculating average times
-
+RSSI_TO_DIST_DATABASE = 'Fila_Medições.xlsx' #excel sheet with RSSI to distance relation
+DIST_COLUMN_NAME = 'Distancia' #name of the column with distance values
+RSSI_COLUMN_NAME = 'RSSI' #name of the column with the RSSI values
 
 
 def get_time():
@@ -70,15 +72,15 @@ def rssi_to_dist(signal):
     :param data: signal strength (RSSI)
     :return: The average of the distances for the given value of RSSI
     """
-    data = pd.read_excel('Fila_Medições.xlsx', index_col=0)
+    data = pd.read_excel(RSSI_TO_DIST_DATABASE, index_col=0)
 
-    dfSelected = data[['Distancia', 'RSSI']]
+    dfSelected = data[[DIST_COLUMN_NAME, RSSI_COLUMN_NAME]]
     rssiDist = {}
     key = signal
     rssiDist.setdefault(key, [])
     for _, row in dfSelected.iterrows():
-        rssi = row['RSSI']
-        distance = row['Distancia']
+        rssi = row[RSSI_COLUMN_NAME]
+        distance = row[DIST_COLUMN_NAME]
         if rssi == signal:
             rssiDist[key].append(distance)
     
@@ -298,32 +300,31 @@ class AccessPoint:
         :param data: self
         :return: nothing
         """
-        new_clients = []
-        
+        new_clients = [] #list of the MACs of the new clients
+        regulars = [] #list of clients that aren't new nor old
+
         self.measure_queue() #fazemos isto primeiro para ter a certeza que nao se chamou o update antes do measure e nao temos a stations
         # e o times vazio
-       
-        time_passed = self.__times[1] - self.__times[0] # time passed between measurements
-        # nao vai estar sempre a dar o mesmo valor se tu fazes sempre [1] e [0] nos calculos???
 
+        time_passed = self.__times[1] - self.__times[0] # time passed between measurements
 
         for client in self.__clients_list: #check for old clients (clients that have already left the queue completely) and remove them
 
             if client.get_mac() not in self.__stations:
                 self.__past_clients_list.append(client)
                 self.__clients_list.remove(client)
-        
+            else:
+                regulars.append(client.get_mac()) #list of existing mac addresses
+
         for mac, rssi in self.__stations.items(): #checks for new clients, then adds and updates them, while updating the rest of the clients
 
-            if mac not in self.__clients_list: #isto é uma lista de clientes, ou seja [[mac, rssi]]. é assim mesmo que se verifica?
-                #verificaste que era assim? é que for loop seguinte nao fizeste assim. eu acho que se faz como fizeste no for loop seguinte
-
+            if mac not in regulars:
                 client = Client(mac)
                 client.update_client(rssi, 0) #new clients start with time set to 0 (because they're new)
                 self.__clients_list.append(client)
                 new_clients.append(mac)
         
-        for client in self.__clients_list:
+        for client in self.__clients_list: #updates all other clients
             mac = client.get_mac()
             rssi = self.__stations[mac]
             if mac in self.__stations and mac not in new_clients:
@@ -399,12 +400,23 @@ class AccessPoint:
         :return: average waiting and service times, in that order
         """
         return (self.__avg_waiting_time, self.__avg_service_time)
+    
+    
+    def get_stations(self):
+        """
+        Returns the dictionary with all of the clients' MACs and RSSIs
+        :param data: self
+        :return: dictionary with all of the clients' MACs and RSSIs
+        """
+        return self.__stations
 
 
-def main():
-    i = 1
-    return i    
+def main(AP):
+    AP.update_ap()
+    print(AP.get_ap_times())
+    print(AP.get_stations())
 
 if __name__ == '__main__':
+    access_point = AccessPoint()
     while (True):
-        main()
+        main(access_point)
