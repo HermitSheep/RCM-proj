@@ -171,6 +171,8 @@ class Client:
 
             case 'leaving':
                 self.__leaving_time += time_passed #client has been leaving for the last "timePassed" seconds
+                #se estamos sempre a dar update e o cliente quando sai nao muda o state, isto nao vai so continuar a acresentar
+                # tempo para sempre?
 
             case _:
                 raise ValueError("Client: ", self.__MAC, " has an impossible state")
@@ -186,7 +188,7 @@ class Client:
         self.__update_state(time_passed)
 
 
-    def set_expected_time(self, expected_time):
+    def set_expected_time(self, expected_time): #isto nao devia ser usado no update_state() ?
         """
         Set's the client's expected waiting time
         :param data: self
@@ -282,7 +284,7 @@ class AccessPoint:
 
     def measure_queue(self):
         """
-        Measures how many clients are in the queue and each of their RSSIs, and updates times queue
+        Measures how many clients are in the queue, calculates their RSSIs, and updates the queue times
         :param data: self
         :return: nothing
         """
@@ -297,7 +299,13 @@ class AccessPoint:
         :return: nothing
         """
         new_clients = []
+        
+        self.measure_queue() #fazemos isto primeiro para ter a certeza que nao se chamou o update antes do measure e nao temos a stations
+        # e o times vazio
+       
         time_passed = self.__times[1] - self.__times[0] # time passed between measurements
+        # nao vai estar sempre a dar o mesmo valor se tu fazes sempre [1] e [0] nos calculos???
+
 
         for client in self.__clients_list: #check for old clients (clients that have already left the queue completely) and remove them
 
@@ -305,8 +313,11 @@ class AccessPoint:
                 self.__past_clients_list.append(client)
                 self.__clients_list.remove(client)
         
-        for mac, rssi in self.__stations.items(): #check for new clients, then add and update them, while updating the rest of the clients
-            if mac not in self.__clients_list:
+        for mac, rssi in self.__stations.items(): #checks for new clients, then adds and updates them, while updating the rest of the clients
+
+            if mac not in self.__clients_list: #isto é uma lista de clientes, ou seja [[mac, rssi]]. é assim mesmo que se verifica?
+                #verificaste que era assim? é que for loop seguinte nao fizeste assim. eu acho que se faz como fizeste no for loop seguinte
+
                 client = Client(mac)
                 client.update_client(rssi, 0) #new clients start with time set to 0 (because they're new)
                 self.__clients_list.append(client)
@@ -314,7 +325,7 @@ class AccessPoint:
         
         for client in self.__clients_list:
             mac = client.get_mac()
-            rssi = self.__stations[client.get_mac()]
+            rssi = self.__stations[mac]
             if mac in self.__stations and mac not in new_clients:
                 client.update_client(rssi, time_passed) #other clients get their time updated
 
