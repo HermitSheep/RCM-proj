@@ -1,36 +1,38 @@
-document.addEventListener('DOMContentLoaded', function() {
-    // light and dark mode themes, first select elements and then change when people click it
-    const modeToggle = document.getElementById('mode-toggle');
-    const body = document.body;
+document.addEventListener("DOMContentLoaded", function () {
+  // light and dark mode themes, first select elements and then change when people click it
+  const modeToggle = document.getElementById("mode-toggle");
+  const body = document.body;
 
-    modeToggle.addEventListener('click', function() {
-        if (body.classList.contains('light-mode')) {
-            body.classList.remove('light-mode');
-            body.classList.add('dark-mode');
-            modeToggle.textContent = '🌙';
-        } else {
-            body.classList.remove('dark-mode');
-            body.classList.add('light-mode');
-            modeToggle.textContent = '🌞';
-        }
-    });
-
-    // update the "current time" every second
-    function updateClock() {
-        const now = new Date();
-        const timeString = now.toLocaleTimeString();
-        document.getElementById('current-time').textContent = `Current time: ${timeString}`;
+  modeToggle.addEventListener("click", function () {
+    if (body.classList.contains("light-mode")) {
+      body.classList.remove("light-mode");
+      body.classList.add("dark-mode");
+      modeToggle.textContent = "🌙";
+    } else {
+      body.classList.remove("dark-mode");
+      body.classList.add("light-mode");
+      modeToggle.textContent = "🌞";
     }
+  });
 
-    setInterval(updateClock, 1000);
-    updateClock();
+  // update the "current time" every second
+  function updateClock() {
+    const now = new Date();
+    const timeString = now.toLocaleTimeString();
+    document.getElementById(
+      "current-time"
+    ).textContent = `Current time: ${timeString}`;
+  }
+
+  setInterval(updateClock, 1000);
+  updateClock();
 
     // update the table with MAC addresses and RSSI values
     function getStationInfo() {
-        fetch('/get-station-info')
+        fetch('http://localhost:5000/get-station-info')
             .then(response => response.json())
             .then(data => {
-                const tableBody = document.getElementById('station-table-body');
+                const tableBody = document.getElementById('stations-table-body');
                 tableBody.innerHTML = '';  // Clear the table before adding new data
     
                 // Loop through each MAC-RSSI pair and create a row in the table
@@ -58,7 +60,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Function to fetch and display average waiting time and service time
     function getWaitingInfo() {
-        fetch('/get-waiting-info')
+        fetch('http://localhost:5000/get-waiting-info')
             .then(response => response.json())
             .then(data => {
                 const avgWaitTime = data['avg-wait-time'];
