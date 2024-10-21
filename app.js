@@ -28,7 +28,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // update the table with MAC addresses and RSSI values
     function updateInfo() {
         // get the data from the flask
-        fetch('http://localhost:5000/get-ap-times')
+        fetch('http://localhost:5000/get-station-info')
             .then(response => response.json())
             .then(data => {
                 // get the dictionary of MACs and RSSIs
