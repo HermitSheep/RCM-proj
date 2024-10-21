@@ -1,7 +1,7 @@
 from flask import Flask, jsonify
 import time
 import statistics
-from backend import AccessPoint 
+from ClientApp import AccessPoint 
 
 app = Flask(__name__)
 
