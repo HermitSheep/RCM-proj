@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to Line Monitoring</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="light-mode">
+    <!-- dark/light mode button -->
+    <div class="mode-toggle-wrapper">
+        <button id="mode-toggle">🌞</button>
+    </div>
+
+    <!-- Main content -->
+    <div class="container">
+        <h1 class="centered-title">Welcome to Line Monitoring</h1>
+        <div class="centered-clock">
+            <span id="current-time" class="clock">Current time: --:--:--</span>
+        </div>
+
+        <!-- Status -->
+        <div class="status-grid ">
+            <div class="status-box large-box">
+                <h2>People in front of you:</h2>
+                <span id="distance">-</span> people
+            </div>
+
+            <!-- vai ser a MEDIANA das ultimas 3 pessoas -->
+            <div class="status-box large-box">
+                <h2>Estimated Waiting Time For You</h2>
+                <span id="own-wait-time">-</span> minutes
+            </div>
+
+            <div class="status-box large-box">
+                <h2>Estimated General Waiting Time</h2>
+                <span id="gen-wait-time">-</span> minutes
+            </div>
+
+            <div class="status-box large-box">
+                <h2>Estimated Service Time</h2>
+                <span id="serv-wait-time">-</span> minutes
+            </div>
+
+            <div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>MAC Address</th>
+                            <th>RSSI</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stations-table-body">
+                        <!-- table with MAC and RSSI -->
+                    </tbody>
+                </table>
+            </div>
+
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
+
+
