@@ -26,41 +26,61 @@ document.addEventListener('DOMContentLoaded', function() {
     updateClock();
 
     // update the table with MAC addresses and RSSI values
-    function updateInfo() {
-        // get the data from the flask
-        fetch('http://localhost:5000/get-station-info')
+    function getStationInfo() {
+        fetch('/get-station-info')
             .then(response => response.json())
             .then(data => {
-                // get the dictionary of MACs and RSSIs
-                const stations = data;
+                const tableBody = document.getElementById('station-table-body');
+                tableBody.innerHTML = '';  // Clear the table before adding new data
     
-                // get the table where we will add the rows (in home.html) and clear previous entries
-                const tableBody = document.getElementById('stations-table-body');
-                tableBody.innerHTML = ''; 
-    
-                // add each station (MAC address and RSSI) to the table
-                for (const [mac, rssi] of Object.entries(stations)) {
+                // Loop through each MAC-RSSI pair and create a row in the table
+                Object.entries(data).forEach(([mac, rssi]) => {
                     const row = document.createElement('tr');
-    
-                    // add MAC address
+                    
+                    // Create and append MAC address cell
                     const macCell = document.createElement('td');
-                    macCell.textContent = mac;
-    
-                    // add RSSI value
-                    const rssiCell = document.createElement('td');
-                    rssiCell.textContent = rssi;
-    
-                    // append the last two to the row
+                    macCell.innerText = mac;
                     row.appendChild(macCell);
+                    
+                    // Create and append RSSI value cell
+                    const rssiCell = document.createElement('td');
+                    rssiCell.innerText = rssi;
                     row.appendChild(rssiCell);
     
-                    // append the row to the table
+                    // Append the row to the table body
                     tableBody.appendChild(row);
-                }
+                });
             })
-            .catch(error => console.error('Error fetching MAC addresses:', error));
+            .catch(error => {
+                console.error('Error fetching station info:', error);
+            });
+    }
+
+    // Function to fetch and display average waiting time and service time
+    function getWaitingInfo() {
+        fetch('/get-waiting-info')
+            .then(response => response.json())
+            .then(data => {
+                const avgWaitTime = data['avg-wait-time'];
+                const avgServTime = data['avg-serv-time'];
+
+                // Update the text content of the respective elements
+                document.getElementById('avg-wait-time').innerText = `Average Waiting Time: ${avgWaitTime} mins`;
+                document.getElementById('avg-serv-time').innerText = `Average Service Time: ${avgServTime} mins`;
+            })
+            .catch(error => {
+                console.error('Error fetching waiting info:', error);
+            });
+    }
+
+    function updateInfo() {
+        getStationInfo();
+        getWaitingInfo();
     }
 
     // update the table every 3 seconds
     setInterval(updateInfo, 3000);
+
+    // Initial call to populate the data when the page loads
+    updateInfo()
 });
