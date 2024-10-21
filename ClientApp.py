@@ -4,18 +4,21 @@ import time
 from collections import deque
 import statistics
 import pandas as pd
+import math
 
 
 
 QUEUE_MAX_SIZE = 7 #meters
 CLIENT_RSSI_BUFFER_SIZE = 10 #rssi samples
 SERVICE_DIST = 1 #distance at which the person is being served at the balcony, in meters
-LEAVING_DIST = 3 #distance at whereafter the person is probably leaving, in meters
+LEAVING_DIST = 2 #distance at whereafter the person is probably leaving, in meters
 DIST_TO_PEOPLE_RATIO = 0.6 #average distance between two people in the queue, in meters
 AVG_NUMBER = 3 #number of past clients to take into acount when calculating average times
 RSSI_TO_DIST_DATABASE = 'Fila_Medições.xlsx' #excel sheet with RSSI to distance relation
 DIST_COLUMN_NAME = 'Distancia' #name of the column with distance values
 RSSI_COLUMN_NAME = 'RSSI' #name of the column with the RSSI values
+
+Service_Flag = False #flag that marks if there's a client being serviced 
 
 
 def get_time():
@@ -24,7 +27,7 @@ def get_time():
     :params: nothing
     :returns: current time (int)
     """
-    return int(time.time())
+    return float(time.time())
 
 
 
@@ -62,7 +65,14 @@ def get_station_info_direct():
         return stations
     
     except subprocess.CalledProcessError as e:
-        raise(f"Machine probably doesn't have access to the AP, command failed with error: {e}")
+        err_msg = "Machine probably doesn't have access to the AP."
+        args = e.args
+        if not args:
+            arg0 = err_msg
+        else:
+            arg0 = f"{args[0]}\n{err_msg}"
+        e.args = (arg0,) + args[1:]
+        raise
 
 
 
@@ -72,21 +82,32 @@ def rssi_to_dist(signal):
     :param data: signal strength (RSSI)
     :return: The average of the distances for the given value of RSSI
     """
-    data = pd.read_excel(RSSI_TO_DIST_DATABASE, index_col=0)
-
+    data = pd.read_excel(RSSI_TO_DIST_DATABASE)
     dfSelected = data[[DIST_COLUMN_NAME, RSSI_COLUMN_NAME]]
     rssiDist = {}
     key = signal
+    print("key: ", key)
+    print("signal: ", signal)
     rssiDist.setdefault(key, [])
-    for _, row in dfSelected.iterrows():
-        rssi = row[RSSI_COLUMN_NAME]
-        distance = row[DIST_COLUMN_NAME]
-        if rssi == signal:
-            rssiDist[key].append(distance)
     
-    medianDist = statistics.mean(rssiDist[key])
+    # Group the data by RSSI and calculate the median distance for each RSSI
+    rssiDist = dfSelected.groupby(RSSI_COLUMN_NAME)[DIST_COLUMN_NAME].apply(list).to_dict()
+    print("rssiDist: ", rssiDist)
+    # Sort the RSSI keys to find the closest lower value if the exact signal is not present
+    sorted_rssi = sorted(rssiDist.keys(), reverse=True)
+    # Look for exact RSSI or closest lower value
+    for rssi in sorted_rssi:
+        print("rssi: ", rssi)
+        if signal >= rssi:
+            print("rssi no if: ", rssi)
+            return statistics.median(rssiDist[rssi])
+        if signal not in sorted_rssi:
+            fake_signal = min(sorted_rssi)
+            print("fake signal: ", fake_signal)
+            return statistics.median(rssiDist[fake_signal])
     
-    return medianDist
+    
+    return None
 
 
 
@@ -108,7 +129,7 @@ class RSSIBuffer:
         """
         if len(self.__buffer) == 0:
             for _ in range(self.__size):
-                self.add_rssi(rssi)
+                self.__buffer = [rssi] * self.__size
         else:
             self.__buffer.append(rssi)
 
@@ -121,7 +142,7 @@ class RSSIBuffer:
         :raises: ValueError if the buffer is empty
         """
         if len(self.__buffer) > 0:
-            return statistics.median(self.__buffer)
+            return math.floor(statistics.median(self.__buffer))
         else:
             raise ValueError("Tried to read from an empty buffer")
 
@@ -159,15 +180,21 @@ class Client:
         :return: nothing
         :raises: ValueError if the client has an invalid state
         """
+        print("state: ", self.__state)
+        print("time: ", time_passed)
+        global Service_Flag
+        
         match self.__state:
             case 'waiting':
-                if self.__distance < SERVICE_DIST:
+                if self.__distance < SERVICE_DIST and  not Service_Flag:
                     self.__state = 'service'
+                    Service_Flag = True
                 else:
                     self.__waiting_time += time_passed #client has been waiting for the last "timePassed" seconds
             case 'service':
                 if self.__distance > LEAVING_DIST: #fazemos distancia? nao tempo + rssi ? -> por tempo não sabemos se houve algum problema, ou zigzageamento, por RSSI é igual a por distância
                     self.__state = 'leaving'
+                    Service_Flag = False
                 else:
                     self.__service_time += time_passed #client has been being serviced for the last "timePassed" seconds
 
@@ -215,6 +242,14 @@ class Client:
         :return: client's waiting time
         """
         return self.__waiting_time
+    
+    def get_client_state(self):
+        """
+        Gets the client's state
+        :param data: self
+        :return: client's state
+        """
+        return self.__state
 
 
     def get_expected_waiting_time(self): #site needs this
@@ -307,10 +342,13 @@ class AccessPoint:
         # e o times vazio
 
         time_passed = self.__times[1] - self.__times[0] # time passed between measurements
+        print("time 1: ", self.__times[1])
+        print("time 0: ", self.__times[0])
 
         for client in self.__clients_list: #check for old clients (clients that have already left the queue completely) and remove them
-
-            if client.get_mac() not in self.__stations:
+            state = client.get_client_state()
+            print(state)
+            if client.get_mac() not in self.__stations or state == 'leaving':
                 self.__past_clients_list.append(client)
                 self.__clients_list.remove(client)
             else:
@@ -337,10 +375,13 @@ class AccessPoint:
         :params: self
         :returns: nothing
         """
-        avg_service = 0
-        for old_client in self.__past_clients_list[-1:-AVG_NUMBER -1:-1]: # [-1, -2, -3] -> last three elements of a list, for example
-            avg_service += old_client.get_client_service_time()
-
+        avg_service = []
+        if len(self.__past_clients_list) > 0:
+            for old_client in self.__past_clients_list[-1:-AVG_NUMBER -1:-1]: # [-1, -2, -3] -> last three elements of a list, for example
+                avg_service.append(old_client.get_client_service_time())
+        else:
+            for cur_client in self.__clients_list[-1:-AVG_NUMBER -1:-1]: # [-1, -2, -3] -> last three elements of a list, for example
+                avg_service.append(cur_client.get_client_service_time())
         self.__avg_service_time = statistics.mean(avg_service)
 
 
@@ -350,11 +391,16 @@ class AccessPoint:
         :params: self
         :returns: nothing
         """
-        avg_service = 0
-        for old_client in self.__past_clients_list[-1:-AVG_NUMBER -1:-1]: # [-1, -2, -3] -> last three elements of a list, for example
-            avg_service += old_client.get_client_waiting_time()
-
-        self.__avg_service_time = statistics.mean(avg_service)
+        avg_waiting = []
+        if len(self.__past_clients_list) > 0:
+            avg_waiting = []
+            for old_client in self.__past_clients_list[-1:-AVG_NUMBER -1:-1]: # [-1, -2, -3] -> last three elements of a list, for example
+                avg_waiting.append(old_client.get_client_waiting_time())
+            self.__avg_waiting_time = statistics.mean(avg_waiting)
+        else:
+            for cur_client in self.__clients_list[-1:-AVG_NUMBER -1:-1]: # [-1, -2, -3] -> last three elements of a list, for example
+                avg_waiting.append(cur_client.get_client_waiting_time())
+        self.__avg_waiting_time = statistics.mean(avg_waiting)
 
 
     def update_clients_expected_time(self):
@@ -415,6 +461,7 @@ def main(AP):
     AP.update_ap()
     print(AP.get_ap_times())
     print(AP.get_stations())
+    time.sleep(2)
 
 if __name__ == '__main__':
     access_point = AccessPoint()
