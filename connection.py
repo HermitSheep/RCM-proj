@@ -2,34 +2,34 @@ from flask import Flask, jsonify
 import time
 import statistics
 from ClientApp import AccessPoint 
+from ClientApp import Client
 
 app = Flask(__name__)
 
 # initialize AP
 access_point = AccessPoint()
+client_station = Client()
 
-# route to get AP times (general waiting time and service time)
-@app.route('/get-ap-times', methods=['GET'])
-def get_ap_times():
+# route to get MAC and RSSI information
+@app.route('/get-station-info', methods=['GET'])
+def get_station_info():
+    station_info = access_point.get_stations()
+    return jsonify(station_info)  # returns the dictionary as a JSON response
+
+
+@app.route('/get-waiting-info', methods=['GET'])
+def get_waiting_info():
     access_point.update_ap()  # update the AP
-    avg_waiting_time, avg_service_time = access_point.get_ap_times()
+    distance = client_station.get_distance()  
+    own_wait_time = client_station.get_expected_waiting_time()  
+    avg_waiting_time, avg_service_time  = access_point.get_ap_times() 
+    
     return jsonify({
-        'avg_waiting_time': avg_waiting_time,
-        'avg_service_time': avg_service_time
+        'distance': distance,
+        'own_wait_time': own_wait_time,
+        'avg_wait_time': avg_waiting_time,
+        'avg-serv-time': avg_service_time
     })
-
-# route to get client's estimated wait time by MAC address
-@app.route('/get-client-wait-time/<mac_address>', methods=['GET'])
-def get_client_wait_time(mac_address):
-    client = access_point.find_client(mac_address)
-    if client:
-        return jsonify({
-            'estimated_wait_time': client.get_expected_waiting_time()
-        })
-    else:
-        return jsonify({
-            'error': 'Client not found'
-        }), 404
 
 
 if __name__ == '__main__':
