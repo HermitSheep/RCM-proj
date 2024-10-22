@@ -7,15 +7,10 @@ from ClientApp import Client
 
 app = Flask(__name__)
 CORS(app)
-
-# initialize AP
-# client_station = Client()
-
-
 # route to get MAC and RSSI information
 @app.route("/get-station-info", methods=["GET"])
 def get_station_info():
-    return access_point.get_stations(), 200  # returns the dictionary as a JSON response
+    return access_point.get_place_dist(), 200  # returns the dictionary as a JSON response
 
 
 @app.route("/get-waiting-info", methods=["GET"])

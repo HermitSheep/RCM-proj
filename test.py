@@ -1,38 +1,52 @@
-import subprocess
-import re
+from collections import deque
+import statistics
+import math
 
-def get_station_info_direct():
-    # Command to run via SSH and capture the output directly
-    command = (
-        "ssh -i /home/mateus/.ssh/mikrotik_rsa "
-        "-o HostKeyAlgorithms=+ssh-rsa "
-        "root@192.168.1.1 'iw dev wlan0 station dump'"
-    )
-    
-    # Run the command and capture the output
-    result = subprocess.run(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    
-    # Check for errors
-    if result.returncode != 0:
-        print(f"Error: {result.stderr.decode('utf-8')}")
-        return None
-    
-    # Get the output as text
-    output = result.stdout.decode('utf-8')
-    
-    # Dictionary to hold MAC address and signal strength
-    stations = {}
+CLIENT_RSSI_BUFFER_SIZE = 3  # rssi samples
 
-    # Use regular expressions to extract MAC addresses and signal strength
-    matches = re.findall(r"Station ([0-9a-f:]+).*?signal:\s+(-?\d+)", output, re.DOTALL)
-    
-    for match in matches:
-        mac_address = match[0]
-        signal_strength = int(match[1])
-        stations[mac_address] = signal_strength
-    
-    return stations
+class RSSIBuffer:
+    """
+    A queue with defined max size, and a method for getting its median
+    """
 
-# Example usage:
-stations = get_station_info_direct()
-print(stations)
+    def __init__(self, max_len):
+        self.__buffer = deque(maxlen=max_len)  # Use deque with a fixed size
+        self.__size = max_len
+
+    def add_rssi(self, rssi):
+        """
+        Adds a new RSSI value to the buffer.
+        If the buffer is empty, fills it with the initial RSSI value to prevent early median from being 0.
+        :param rssi: RSSI value to add
+        :return: nothing
+        """
+        if len(self.__buffer) == 0:
+            # Append the initial RSSI value to fill the deque
+            self.__buffer.extend([rssi] * self.__size)
+        else:
+            self.__buffer.append(rssi)
+
+    def calculate_median(self):
+        """
+        Calculates the median of the RSSI values in the buffer.
+        :return: The median of the RSSI values in the buffer
+        :raises: ValueError if the buffer is empty
+        """
+        if len(self.__buffer) > 0:
+            return math.floor(statistics.median(self.__buffer))
+        else:
+            raise ValueError("Tried to read from an empty buffer")
+
+
+# Example usage
+buffer = RSSIBuffer(CLIENT_RSSI_BUFFER_SIZE)
+buffer.add_rssi(-48)  # Buffer -> [-48, -48, -48]
+buffer.add_rssi(-48)  # Buffer -> [-48, -48, -48] (still max length 3)
+buffer.add_rssi(-6)   # Buffer -> [-48, -48, -6]
+buffer.add_rssi(-6)   # Buffer -> [-48, -6, -6]
+
+buffer.add_rssi(-6)
+buffer.add_rssi(-6)
+buffer.add_rssi(-6)
+buffer.add_rssi(-6)
+
