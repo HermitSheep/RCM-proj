@@ -8,23 +8,16 @@ import math
 
 
 QUEUE_MAX_SIZE = 2  # meters
-CLIENT_RSSI_BUFFER_SIZE = 3  # rssi samples
-SERVICE_DIST = (
-    1  # distance at which the person is being served at the balcony, in meters
-)
-LEAVING_DIST = 2  # distance at whereafter the person is probably leaving, in meters
-LEAVING_RSSI = -55  # distance at whereafter the person is probably leaving, in meters
-DIST_TO_PEOPLE_RATIO = (
-    0.6  # average distance between two people in the queue, in meters
-)
-AVG_NUMBER = (
-    3  # number of past clients to take into acount when calculating average times
-)
-RSSI_TO_DIST_DATABASE = (
-    "Fila_Medições.xlsx"  # excel sheet with RSSI to distance relation
-)
+CLIENT_RSSI_BUFFER_SIZE = 5  # rssi samples
+SERVICE_DIST = 1  # distance at which the person is being served at the balcony, in meters
+WAITING_DIST = 3  # distance at which the person is counts as being in the queue, in meters
+LEAVING_DIST = 4  # distance at whereafter the person is probably leaving, in meters
+DIST_TO_PEOPLE_RATIO = 0.6  # average distance between two people in the queue, in meters
+AVG_NUMBER = 3  # number of past clients to take into acount when calculating average times
+RSSI_TO_DIST_DATABASE = "Fila_Medições.xlsx"  # excel sheet with RSSI to distance relation
 DIST_COLUMN_NAME = "Distancia"  # name of the column with distance values
 RSSI_COLUMN_NAME = "RSSI"  # name of the column with the RSSI values
+HOST_MAC = "70:32:17:86:8c:01"  # MAC of the machine that runs the script
 
 Service_Flag = False  # flag that marks if there's a client being serviced
 
@@ -45,11 +38,7 @@ def get_station_info_direct():
     :returns: dictionary with the MAC address as key and the corresponding RSSI as the value
     """
     # Command to run via SSH and capture the output directly
-    command = (
-        "ssh -i /home/mateus/.ssh/mikrotik_rsa "
-        "-o HostKeyAlgorithms=+ssh-rsa "
-        "root@192.168.1.1 'iw dev wlan0 station dump'"
-    )
+    command = "ssh -i /home/mateus/.ssh/mikrotik_rsa " "-o HostKeyAlgorithms=+ssh-rsa " "root@192.168.1.1 'iw dev wlan0 station dump'"
 
     try:
         # Run the command and capture the output
@@ -68,9 +57,7 @@ def get_station_info_direct():
         stations = {}
 
         # Use regular expressions to extract MAC addresses and signal strength
-        matches = re.findall(
-            r"Station ([0-9a-f:]+).*?signal:\s+(-?\d+)", output, re.DOTALL
-        )
+        matches = re.findall(r"Station ([0-9a-f:]+).*?signal:\s+(-?\d+)", output, re.DOTALL)
 
         for match in matches:
             mac_address = match[0]
@@ -101,21 +88,16 @@ def rssi_to_dist(signal):
     rssiDist = {}
     key = signal
     rssiDist.setdefault(key, [])
-    print("signal: ", signal)
     # Group the data by RSSI and calculate the median distance for each RSSI
-    rssiDist = (
-        dfSelected.groupby(RSSI_COLUMN_NAME)[DIST_COLUMN_NAME].apply(list).to_dict()
-    )
+    rssiDist = dfSelected.groupby(RSSI_COLUMN_NAME)[DIST_COLUMN_NAME].apply(list).to_dict()
     # Sort the RSSI keys to find the closest lower value if the exact signal is not present
     sorted_rssi = sorted(rssiDist.keys(), reverse=True)
     # Look for exact RSSI or closest lower value
     for rssi in sorted_rssi:
         if signal >= rssi:
-            print("real dist: ", statistics.median(rssiDist[rssi]))
             return statistics.median(rssiDist[rssi])
         if signal not in sorted_rssi:
             fake_signal = min(sorted_rssi)
-            print("fake dist: ", statistics.median(rssiDist[fake_signal]))
             return statistics.median(rssiDist[fake_signal])
 
     return None
@@ -154,6 +136,9 @@ class RSSIBuffer:
         else:
             raise ValueError("Tried to read from an empty buffer")
 
+    def get_RSSI(self):
+        return self.__buffer[2]
+
 
 class Client:
     """
@@ -166,7 +151,6 @@ class Client:
         self.__RSSI_buffer = RSSIBuffer(CLIENT_RSSI_BUFFER_SIZE)
         self.__waiting_time = 0  # time the client has spent in the queue
         self.__service_time = 0  # time the client has spent being serviced
-        self.__leaving_time = 0  # time the client has spent leaving
         self.__expected_wait_time = 0  # time the client can expect to wait in line
         self.__state = "waiting"  # States: 'waiting', 'service', 'leaving'
 
@@ -177,8 +161,8 @@ class Client:
         :return: nothing
         """
         self.__RSSI_buffer.add_rssi(rssi)
-        print("buffer: ", self.__RSSI_buffer.calculate_median())
         self.__distance = rssi_to_dist(self.__RSSI_buffer.calculate_median())
+        self.__distance = round(self.__distance, 2)
 
     def __update_state(self, time_passed):
         """
@@ -187,36 +171,23 @@ class Client:
         :return: nothing
         :raises: ValueError if the client has an invalid state
         """
-        print("state: ", self.__state)
-        print("MAC: ", self.__MAC)
-        print("time: ", time_passed)
-        print("distance: ", self.__distance)
         global Service_Flag
-        print("after global: ", Service_Flag)
-
         match self.__state:
             case "waiting":
-                print("wait: ", Service_Flag)
                 if self.__distance < SERVICE_DIST and not Service_Flag:
                     self.__state = "service"
                     Service_Flag = True
-                    print("service: ", Service_Flag)
-                    print("wait service", self.__state)
-                    print("mac serv: ", self.__MAC)
                 else:
                     self.__waiting_time += time_passed  # client has been waiting for the last "timePassed" seconds
             case "service":
-                if self.__distance > LEAVING_DIST:
+                if self.__distance > LEAVING_DIST:  # client leaves if it's farther than leaving distance
                     self.__state = "leaving"
                     Service_Flag = False
-                    print("leave: ", Service_Flag)
-                    print("service leave", self.__state)
-                    print("mac leave: ", self.__MAC)
                 else:
                     self.__service_time += time_passed  # client has been being serviced for the last "timePassed" seconds
 
             case "leaving":
-                self.__leaving_time += time_passed  # client has been leaving for the last "timePassed" seconds
+                pass  # nothing happens because the client has left
 
             case _:
                 raise ValueError("Client: ", self.__MAC, " has an impossible state")
@@ -230,15 +201,13 @@ class Client:
         self.__update_rssi(rssi)
         self.__update_state(time_passed)
 
-    def set_expected_time(
-        self, expected_time
-    ):  # isto nao devia ser usado no update_state() ?
+    def set_expected_time(self, expected_time):  # isto nao devia ser usado no update_state() ?
         """
         Set's the client's expected waiting time
         :param data: self
         :return: nothing
         """
-        self.__expected_wait_time = expected_time
+        self.__expected_wait_time = round(expected_time, 2)
 
     def get_client_service_time(self):
         """
@@ -246,7 +215,7 @@ class Client:
         :param data: self
         :return: client's service time
         """
-        return self.__service_time
+        return round(self.__service_time, 2)
 
     def get_client_waiting_time(self):
         """
@@ -254,7 +223,7 @@ class Client:
         :param data: self
         :return: client's waiting time
         """
-        return self.__waiting_time
+        return round(self.__waiting_time, 2)
 
     def get_client_state(self):
         """
@@ -270,15 +239,7 @@ class Client:
         :param data: self
         :return: client's expected waiting time
         """
-        return self.__expected_wait_time
-
-    def get_expected_leaving_time(self):
-        """
-        Gets the client's expected leaving time
-        :param data: self
-        :return: client's expected leaving time
-        """
-        return self.__leaving_time
+        return round(self.__expected_wait_time, 2)
 
     def get_mac(self):
         """
@@ -296,6 +257,9 @@ class Client:
         """
         return self.__distance
 
+    def debug_client(self):
+        return (self.__MAC, self.__distance, self.__RSSI_buffer.get_RSSI(), self.__RSSI_buffer.calculate_median(), self.__waiting_time, self.__service_time, self.__expected_wait_time, self.__state)
+
 
 class AccessPoint:
     """
@@ -307,15 +271,9 @@ class AccessPoint:
         self.__past_clients_list = []  # Past clients
         self.__avg_waiting_time = 0  # Average waiting time (global)
         self.__avg_service_time = 0  # Average service time (global)
-        self.__stations = (
-            {}
-        )  # Dictionary with the measured MAC and corresponding RSSIs of each connected client
-        self.__times = deque(
-            maxlen=2
-        )  # Queue with the times of the past and current measurements (to measure time passed between measurements)
-        self.__times.append(
-            0
-        )  # Initializing it at 0 (the first time it runs, zero will be the past measurement)
+        self.__stations = {}  # Dictionary with the measured MAC and corresponding RSSIs of each connected client
+        self.__times = deque(maxlen=2)  # Queue with the times of the past and current measurements (to measure time passed between measurements)
+        self.__times.append(0)  # Initializing it at 0 (the first time it runs, zero will be the past measurement)
 
     def measure_queue(self):
         """
@@ -337,64 +295,47 @@ class AccessPoint:
 
         self.measure_queue()
 
-        time_passed = self.__times[1] - self.__times[0] # time passed between measurements
-        #print("time 1: ", self.__times[1])
-        #print("time 0: ", self.__times[0])
+        time_passed = self.__times[1] - self.__times[0]  # time passed between measurements
 
-        for (
-            client
-        ) in (
-            self.__clients_list
-        ):  # check for old clients (clients that have already left the queue completely) and remove them
+        for client in self.__clients_list:  # check for old clients (clients that have already left the queue completely) and remove them
             state = client.get_client_state()
-            #print(state)
-            if client.get_mac() not in self.__stations or state == "leaving":
+            mac = client.get_mac()
+            if mac not in self.__stations or state == "leaving":
                 self.__past_clients_list.append(client)
                 self.__clients_list.remove(client)
             else:
-                regulars.append(client.get_mac())  # list of existing mac addresses
-        #print("should enter now")
-        for mac,rssi in self.__stations.items():  # checks for new clients, then adds and updates them, while updating the rest of the clients
-         #   print("indeed i did")
-          #  print("mac and rssi: ", mac, rssi)
-            
-            if mac not in regulars and rssi > LEAVING_RSSI:
-           #     print("not not")
+                regulars.append(mac)  # list of existing mac addresses
+        for mac, rssi in self.__stations.items():  # checks for, adds and updates new clients
+            dist = rssi_to_dist(rssi)
+            if mac not in regulars and dist < WAITING_DIST and mac != HOST_MAC:  # if the client is new and is close enough, it joins the queue
                 client = Client(mac)
-                client.update_client(
-                    rssi, 0
-                )  # new clients start with time set to 0 (because they're new)
+                client.update_client(rssi, 0)  # new clients start with time set to 0 (because they're new)
                 self.__clients_list.append(client)
-            #    print("list: ", self.__clients_list)
                 new_clients.append(mac)
 
         for client in self.__clients_list:  # updates all other clients
             mac = client.get_mac()
             rssi = self.__stations[mac]
             if mac in self.__stations and mac not in new_clients:
-                client.update_client(
-                    rssi, time_passed
-                )  # other clients get their time updated
+                client.update_client(rssi, time_passed)  # other clients get their time updated
 
     def update_service_time(self):
         """
-        This function updates the AP's service time based on the mean of the last AVG_NUMBER available clients that left
+        This function updates the AP's service time based on the mean of the last 'AVG_NUMBER' old clients.
+        If the list of old clients is empty, it doesn't update
         :params: self
         :returns: nothing
         """
         avg_service = []
         size_past_clients = len(self.__past_clients_list)
-        if size_past_clients > 0:
-            for old_client in self.__past_clients_list[
-                -1 : -AVG_NUMBER - 1 : -1
-            ]:  # [-1, -2, -3] -> last three elements of a list, for example
-                avg_service.append(old_client.get_client_service_time())
-            self.__avg_service_time = statistics.mean(avg_service)
-        else:
-            for cur_client in self.__clients_list[
-                -1 : -AVG_NUMBER - 1 : -1
-            ]:  # [-1, -2, -3] -> last three elements of a list, for example
-                avg_service.append(cur_client.get_client_service_time())
+
+        if size_past_clients == 0:  # if the list is empty, don't update
+            return
+
+        for old_client in self.__past_clients_list[-AVG_NUMBER:]:
+            # goes over the last 'AVG_NUMBER' elements of the list backwards, or all of them if it has fewer than 'AVG_NUMBER' elements
+            avg_service.append(old_client.get_client_service_time())
+        self.__avg_service_time = statistics.mean(avg_service)
 
     def update_waiting_time(self):
         """
@@ -402,51 +343,19 @@ class AccessPoint:
         :params: self
         :returns: nothing
         """
-        avg_waiting = []
-        size_past_clients = len(self.__past_clients_list)
-      #  print("size of list: ", size_past_clients)
-        size_cur_clients = len(self.__clients_list)
-       # print("size cur clients: ", size_cur_clients)
-        if size_past_clients > 0:
-            if size_past_clients >= AVG_NUMBER:
-        #        print("whyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy")
-                for old_client in self.__past_clients_list[
-                    -1 : -AVG_NUMBER - 1 : -1
-                ]:  # [-1, -2, -3] -> last three elements of a list, for example
-                    avg_waiting.append(old_client.get_client_waiting_time())
-                self.__avg_waiting_time = statistics.mean(avg_waiting)
-            elif size_past_clients == 2:
-                for old_client in self.__past_clients_list[-1:-(size_past_clients):-1]:
-         #           print(
-           #             "old_client.get_client_waiting_time() 2  ",
-          #              old_client.get_client_waiting_time(),
-            #        )
-                    avg_waiting.append(old_client.get_client_waiting_time())
-             #       print("avg_wait 2 : ", old_client.get_client_waiting_time())
-                self.__avg_waiting_time = statistics.mean(avg_waiting)
-            else:
-              #  print("wtffffffffffffffffffffffffffffffffffffffffff")
-               # print(self.__past_clients_list)
-                old_client = self.__past_clients_list[0]
+        avg_waiting = []  # put waiting times here to calculate average
+        size_past_clients = len(self.__past_clients_list)  # number of old clients
+        size_cur_clients = len(self.__clients_list)  # number of current clients
+        if size_past_clients != 0:
+            for old_client in self.__past_clients_list[-AVG_NUMBER:]:
                 avg_waiting.append(old_client.get_client_waiting_time())
-                #print("avg_wait: ", old_client.get_client_waiting_time())
-                self.__avg_waiting_time = statistics.mean(avg_waiting)
-        else:
-            if size_cur_clients >= AVG_NUMBER:
-                for cur_client in self.__clients_list[
-                -1 : -AVG_NUMBER - 1 : -1
-            ]:  # [-1, -2, -3] -> last three elements of a list, for example
-                    avg_waiting.append(cur_client.get_client_waiting_time())
-                self.__avg_waiting_time = statistics.mean(avg_waiting)
-                
-            elif size_past_clients == 2:
-                for cur_client in self.__clients_list[-1:-(size_cur_clients):-1]:
-                    avg_waiting.append(cur_client.get_client_waiting_time())
-                self.__avg_waiting_time = statistics.mean(avg_waiting)
-            else:
-                cur_client = self.__clients_list[0]
+            self.__avg_waiting_time = statistics.mean(avg_waiting)
+        elif size_cur_clients != 0:  #
+            for cur_client in self.__clients_list[-AVG_NUMBER:]:
                 avg_waiting.append(cur_client.get_client_waiting_time())
-                self.__avg_waiting_time = statistics.mean(avg_waiting)
+            self.__avg_waiting_time = statistics.mean(avg_waiting)
+        else:
+            return
 
     def update_clients_expected_time(self):
         """
@@ -496,34 +405,52 @@ class AccessPoint:
         :return: dictionary with all of the clients' MACs and RSSIs
         """
         return self.__stations
-    
+
     def get_place_dist(self):
+        """
+        Returns the dictionary with all of the clients' MACs and RSSIs
+        :param data: self
+        :return: dictionary with all of the clients' MACs and RSSIs
+        """
         station_client = {}
         clients = self.__stations
         i = 1
-        for key in clients:
+        for key in clients.values():
             station_client[i] = rssi_to_dist(clients[key])
             i += 1
-            
-        return  station_client
+        return station_client
 
+    def debug_ap(self):
+        """
+        Prints all info of every active client
+        :param data: self
+        :return: nothing
+        """
+        for client in self.__clients_list:
+            print(client.debug_client())
 
-
-#    def get_clients_stuffs(self):
-#        """
-#        Returns the dictionary with all of the clients' MACs and people distances
-#        :param data: self
-#        :return: dictionary with all of the clients' MACs and people distances
-#        """
-#        clients = {}
-#        for client in self.__clients_list:
-#            clients[client.get_mac()] = client.get_distance()
+    def get_clients_stuffs(self):
+        """
+        Returns the dictionary with all of the clients' number and people distance
+        :param data: self
+        :return: dictionary with all of the clients' number and people distance
+        """
+        i = 1
+        clients = {}
+        clients_list = self.__clients_list
+        sorted_clients = sorted(clients_list, key=lambda client: (client.get_client_state() != "service", -client.get_client_waiting_time()))
+        # this creates a new list with the clients being sorted by 'service' first, and then by diminishing waiting times
+        for client in sorted_clients:
+            clients[i] = round(client.get_distance() / DIST_TO_PEOPLE_RATIO) #  number of client, and it's average person count for it to get to the service area
+            i += 1
+        return clients
 
 
 def main(AP):
     AP.update_ap()
-    print(AP.get_ap_times())
-    print(AP.get_stations())
+    print("mac, distance, RSSI, median RSSI, waiting time, service time, expected waiting time, state")
+    AP.debug_ap()
+    print(AP.get_clients_stuffs())
     time.sleep(2)
 
 
