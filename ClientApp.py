@@ -309,7 +309,7 @@ class AccessPoint:
                 regulars.append(mac)  # list of existing mac addresses
         for mac, rssi in self.__stations.items():  # checks for, adds and updates new clients
             dist = rssi_to_dist(rssi)
-            if mac not in regulars and dist < WAITING_DIST and mac != HOST_MAC:  # if the client is new and is close enough, it joins the queue
+            if mac not in regulars and dist < WAITING_DIST:# and mac != HOST_MAC:  # if the client is new and is close enough, it joins the queue
                 client = Client(mac)
                 client.update_client(rssi, 0)  # new clients start with time set to 0 (because they're new)
                 self.__clients_list.append(client)
@@ -328,16 +328,21 @@ class AccessPoint:
         :params: self
         :returns: nothing
         """
-        avg_service = []
-        size_past_clients = len(self.__past_clients_list)
-
-        if size_past_clients == 0:  # if the list is empty, don't update
+        avg_service = []  # put service times here to calculate average
+        size_past_clients = len(self.__past_clients_list) # number of old clients
+        size_cur_clients = len(self.__clients_list)  # number of current clients
+        if size_past_clients != 0:
+            for old_client in self.__past_clients_list[-AVG_NUMBER:]:
+                # goes over the last 'AVG_NUMBER' elements of the list, or all of them if it has fewer than 'AVG_NUMBER' elements
+                avg_service.append(old_client.get_client_service_time())
+        elif size_cur_clients != 0:
+            for cur_client in self.__clients_list[-AVG_NUMBER:]:
+                if cur_client.get_client_state() == "service":
+                    avg_service.append(cur_client.get_client_service_time())
+        else:
             return
-
-        for old_client in self.__past_clients_list[-AVG_NUMBER:]:
-            # goes over the last 'AVG_NUMBER' elements of the list backwards, or all of them if it has fewer than 'AVG_NUMBER' elements
-            avg_service.append(old_client.get_client_service_time())
-        self.__avg_service_time = statistics.mean(avg_service)
+        if len(avg_service) > 0:
+            self.__avg_service_time = statistics.mean(avg_service)
 
     def update_waiting_time(self):
         """
@@ -351,13 +356,14 @@ class AccessPoint:
         if size_past_clients != 0:
             for old_client in self.__past_clients_list[-AVG_NUMBER:]:
                 avg_waiting.append(old_client.get_client_waiting_time())
-            self.__avg_waiting_time = statistics.mean(avg_waiting)
-        elif size_cur_clients != 0:  #
+        elif size_cur_clients != 0:
             for cur_client in self.__clients_list[-AVG_NUMBER:]:
-                avg_waiting.append(cur_client.get_client_waiting_time())
-            self.__avg_waiting_time = statistics.mean(avg_waiting)
+                if cur_client.get_client_waiting_time() != 0:
+                    avg_waiting.append(cur_client.get_client_waiting_time())
         else:
             return
+        if len(avg_waiting) > 0:
+            self.__avg_waiting_time = statistics.mean(avg_waiting)
 
     def update_clients_expected_time(self):
         """
@@ -400,7 +406,7 @@ class AccessPoint:
         """
         return (self.__avg_waiting_time, self.__avg_service_time)
 
-    def get_num_people(self) 
+    def get_num_people(self):
         """
         Returns the number of people waiting in line
         :param data: self
@@ -452,7 +458,7 @@ class AccessPoint:
         sorted_clients = sorted(clients_list, key=lambda client: (client.get_client_state() != "service", -client.get_client_waiting_time()))
         # this creates a new list with the clients being sorted by 'service' first, and then by diminishing waiting times
         for client in sorted_clients:
-            clients[i] = min(round(client.get_distance() / DIST_TO_PEOPLE_RATIO), len(self.__clients_list))  #  number of client, and it's average person count for it to get to the service area
+            clients[i] = j  #  number of client, and it's average person count for it to get to the service area
             i += 1
             j += 1
         return clients
