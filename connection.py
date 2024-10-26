@@ -17,11 +17,13 @@ def get_station_info():
 def get_waiting_info():
     access_point.update_ap()  # update the AP
     avg_waiting_time, avg_service_time = access_point.get_ap_times()
+    num_people = access_point.get_num_people()
 
     #create a response object
     return {
         "avg-wait-time": round(avg_waiting_time/60,2),
         "avg-serv-time": avg_service_time,
+        "num-people": num_people,
     }
     
 
