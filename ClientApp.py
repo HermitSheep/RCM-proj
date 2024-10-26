@@ -18,6 +18,8 @@ RSSI_TO_DIST_DATABASE = "Fila_Medições.xlsx"  # excel sheet with RSSI to dis
 DIST_COLUMN_NAME = "Distancia"  # name of the column with distance values
 RSSI_COLUMN_NAME = "RSSI"  # name of the column with the RSSI values
 HOST_MAC = "70:32:17:86:8c:01"  # MAC of the machine that runs the script
+LIVE_COMMAND = "ssh -i mikrotik_rsa " "-o HostKeyAlgorithms=+ssh-rsa " "root@192.168.1.1 'iw dev wlan0 station dump'"
+# command if the program is running in sigma, remember that the key has to be in sigma, in the same folder as the program
 
 Service_Flag = False  # flag that marks if there's a client being serviced
 
@@ -38,7 +40,7 @@ def get_station_info_direct():
     :returns: dictionary with the MAC address as key and the corresponding RSSI as the value
     """
     # Command to run via SSH and capture the output directly
-    command = "ssh -i /home/mateus/.ssh/mikrotik_rsa " "-o HostKeyAlgorithms=+ssh-rsa " "root@192.168.1.1 'iw dev wlan0 station dump'"
+    command = LIVE_COMMAND
 
     try:
         # Run the command and capture the output
@@ -436,13 +438,15 @@ class AccessPoint:
         :return: dictionary with all of the clients' number and people distance
         """
         i = 1
+        j = 0
         clients = {}
         clients_list = self.__clients_list
         sorted_clients = sorted(clients_list, key=lambda client: (client.get_client_state() != "service", -client.get_client_waiting_time()))
         # this creates a new list with the clients being sorted by 'service' first, and then by diminishing waiting times
         for client in sorted_clients:
-            clients[i] = round(client.get_distance() / DIST_TO_PEOPLE_RATIO) #  number of client, and it's average person count for it to get to the service area
+            clients[i] = min(round(client.get_distance() / DIST_TO_PEOPLE_RATIO), len(self.__clients_list))  #  number of client, and it's average person count for it to get to the service area
             i += 1
+            j += 1
         return clients
 
 
@@ -451,7 +455,7 @@ def main(AP):
     print("mac, distance, RSSI, median RSSI, waiting time, service time, expected waiting time, state")
     AP.debug_ap()
     print(AP.get_clients_stuffs())
-    time.sleep(2)
+    time.sleep(5)
 
 
 access_point = AccessPoint()

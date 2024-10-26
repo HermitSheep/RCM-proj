@@ -1,5 +1,5 @@
 from flask_cors import CORS
-from flask import Flask, make_response
+from flask import Flask, make_response, render_template
 import time
 import statistics
 from ClientApp import access_point, main
@@ -16,19 +16,21 @@ def get_station_info():
 @app.route("/get-waiting-info", methods=["GET"])
 def get_waiting_info():
     access_point.update_ap()  # update the AP
-    # distance = client_station.get_distance()
-    # own_wait_time = client_station.get_expected_waiting_time()
     avg_waiting_time, avg_service_time = access_point.get_ap_times()
 
+    #create a response object
     return {
-        #    'distance': distance,
-        #    'own_wait_time': own_wait_time,
         "avg-wait-time": round(avg_waiting_time/60,2),
         "avg-serv-time": avg_service_time,
     }
+    
 
+
+@app.route('/')
+def home():
+    return render_template('home.html')
 
 if __name__ == "__main__":
     # by putting host on 0.0.0.0, flask will listen for connections on all network
     # interfaces of the machine, that includes devices in the same network of it
-    app.run(debug=True, host="0.0.0.0")
+    app.run(debug=True, host="0.0.0.0", port=5000)
