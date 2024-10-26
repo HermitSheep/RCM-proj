@@ -65,10 +65,12 @@ document.addEventListener("DOMContentLoaded", function () {
             .then(data => {
                 const avgWaitTime = data['avg-wait-time'];
                 const avgServTime = data['avg-serv-time'];
+                const numPeople = data['num-people'];
 
                 // Update the text content of the respective elements
                 document.getElementById('avg-wait-time').innerText = `Average Waiting Time: ${avgWaitTime} mins`;
                 document.getElementById('avg-serv-time').innerText = `Average Service Time: ${avgServTime} mins`;
+                document.getElementById('num-people').innerText = `Number of people in line: ${numPeople} clients`;
             })
             .catch(error => {
                 console.error('Error fetching waiting info:', error);
@@ -78,6 +80,7 @@ document.addEventListener("DOMContentLoaded", function () {
     function updateInfo() {
         getStationInfo();
         getWaitingInfo();
+        getNumPeople();
     }
 
     // update the table every 3 seconds
