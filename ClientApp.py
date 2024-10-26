@@ -400,6 +400,14 @@ class AccessPoint:
         """
         return (self.__avg_waiting_time, self.__avg_service_time)
 
+    def get_num_people(self) 
+        """
+        Returns the number of people waiting in line
+        :param data: self
+        :return: number of people in line
+        """
+        return len(self.__clients_list)
+
     def get_stations(self):
         """
         Returns the dictionary with all of the clients' MACs and RSSIs
