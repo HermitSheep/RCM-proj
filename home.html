@@ -21,16 +21,15 @@
 
         <!-- Status -->
         <div class="status-grid ">
-            <div class="status-box large-box">
+<!--             <div class="status-box large-box">
                 <h2>People in front of you:</h2>
                 <span id="distance">-</span> people
             </div>
 
-            <!-- vai ser a MEDIANA das ultimas 3 pessoas -->
             <div class="status-box large-box">
                 <h2>Estimated Waiting Time For You</h2>
                 <span id="own-wait-time">-</span> minutes
-            </div>
+            </div> -->
 
             <div class="status-box large-box">
                 <h2>Estimated General Waiting Time</h2>
@@ -42,12 +41,18 @@
                 <span id="avg-serv-time">-</span> minutes
             </div>
 
+            <div class="status-box large-box">
+                <h2>Number of People in Line</h2>
+                <span id="num_people">-</span> minutes
+            </div>
+
+
             <div>
                 <table>
                     <thead>
                         <tr>
-                            <th>MAC Address</th>
-                            <th>RSSI</th>
+                            <th>Client Number</th>
+                            <th>People in front of you</th>
                         </tr>
                     </thead>
                     <tbody id="stations-table-body">
