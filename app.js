@@ -68,9 +68,9 @@ document.addEventListener("DOMContentLoaded", function () {
                 const numPeople = data['num-people'];
 
                 // Update the text content of the respective elements
-                document.getElementById('avg-wait-time').innerText = `Average Waiting Time: ${avgWaitTime} mins`;
-                document.getElementById('avg-serv-time').innerText = `Average Service Time: ${avgServTime} mins`;
-                document.getElementById('num-people').innerText = `Number of people in line: ${numPeople} clients`;
+                document.getElementById('avg-wait-time').innerText = `${avgWaitTime} mins`;
+                document.getElementById('avg-serv-time').innerText = `${avgServTime} mins`;
+                document.getElementById('num-people').innerText = `${numPeople} clients`;
             })
             .catch(error => {
                 console.error('Error fetching waiting info:', error);
