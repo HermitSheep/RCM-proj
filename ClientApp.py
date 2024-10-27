@@ -19,7 +19,7 @@ DIST_COLUMN_NAME = "Distancia"  # name of the column with distance values
 RSSI_COLUMN_NAME = "RSSI"  # name of the column with the RSSI values
 HOST_MAC = "70:32:17:86:8c:01"  # MAC of the machine that runs the script
 LIVE_COMMAND = "ssh -i mikrotik_rsa " "-o HostKeyAlgorithms=+ssh-rsa " "root@192.168.1.1 'iw dev wlan0 station dump'"
-# command if the program is running in sigma, remember that the key has to be in sigma, in the same folder as the program
+# Command to probe the router for all clients connected to it and their RSSI
 
 Service_Flag = False  # flag that marks if there's a client being serviced
 
@@ -203,7 +203,7 @@ class Client:
         self.__update_rssi(rssi)
         self.__update_state(time_passed)
 
-    def set_expected_time(self, expected_time):  # isto nao devia ser usado no update_state() ?
+    def set_expected_time(self, expected_time):
         """
         Set's the client's expected waiting time
         :param data: self
@@ -235,7 +235,7 @@ class Client:
         """
         return self.__state
 
-    def get_expected_waiting_time(self):  # site needs this
+    def get_expected_waiting_time(self):
         """
         Gets the client's expected waiting time
         :param data: self
@@ -329,7 +329,7 @@ class AccessPoint:
         :returns: nothing
         """
         avg_service = []  # put service times here to calculate average
-        size_past_clients = len(self.__past_clients_list) # number of old clients
+        size_past_clients = len(self.__past_clients_list)  # number of old clients
         size_cur_clients = len(self.__clients_list)  # number of current clients
         if size_past_clients != 0:
             for old_client in self.__past_clients_list[-AVG_NUMBER:]:
@@ -387,7 +387,7 @@ class AccessPoint:
         self.update_waiting_time()  # update average waiting time
         self.update_clients_expected_time()  # update clients' expected wait time
 
-    def find_client(self, mac_address):  # site needs this
+    def find_client(self, mac_address):
         """
         Finds the client in the list of clients that has a given MAC address
         :param data: self
@@ -398,7 +398,7 @@ class AccessPoint:
                 return client
         return None
 
-    def get_ap_times(self):  # site needs this
+    def get_ap_times(self):
         """
         Returns the average waiting and service times, in that order
         :param data: self
